@@ -19,6 +19,9 @@ import com.salihraphics.meow.feature.library.LibraryActions
 import com.salihraphics.meow.feature.library.LibraryContent
 import com.salihraphics.meow.feature.library.LibraryMessage
 import com.salihraphics.meow.feature.library.LibraryUiState
+import com.salihraphics.meow.domain.model.AttemptResult
+import com.salihraphics.meow.feature.check.AnswerCheckUi
+import com.salihraphics.meow.feature.check.CheckOutcome
 import com.salihraphics.meow.feature.viewer.PdfPageLoader
 import com.salihraphics.meow.feature.viewer.PdfViewerContent
 import com.salihraphics.meow.feature.viewer.ViewerError
@@ -75,8 +78,13 @@ class LibraryViewerScreenshotTest {
     private fun library(name: String, documents: List<com.salihraphics.meow.domain.model.PdfDocument>?, state: LibraryUiState = LibraryUiState(), dark: Boolean = false) =
         shoot(name, dark) { LibraryContent(documents, state, thumbnails, LibraryActions()) }
 
-    private fun viewer(name: String, state: ViewerUiState, dark: Boolean = false) =
-        shoot(name, dark) { PdfViewerContent(state, initialViewport = { ViewportSnapshot(0) }, onViewportChanged = {}, onPageChanged = {}, onBack = {}) }
+    private fun viewer(name: String, state: ViewerUiState, dark: Boolean = false, check: AnswerCheckUi? = null) =
+        shoot(name, dark) {
+            PdfViewerContent(
+                state, initialViewport = { ViewportSnapshot(0) }, onViewportChanged = {}, onPageChanged = {}, onBack = {},
+                answerCheck = check, onOpenAnswerKey = {},
+            )
+        }
 
     private val ready = ViewerUiState.Ready(docs[0], SyntheticLoader(312), initialPage = 0, annotations = AnnotationSession("doc-1", FakeAnnotationRepository(), CoroutineScope(Dispatchers.Unconfined)))
 
@@ -108,6 +116,19 @@ class LibraryViewerScreenshotTest {
     @Test @Config(qualifiers = PHONE) fun viewerPen() = viewer("phone_viewer_pen", annotated(AnnotationTool.PEN))
     @Test @Config(qualifiers = PHONE) fun viewerReadingDark() = viewer("phone_viewer_annotated_dark", annotated(null), dark = true)
     @Test @Config(qualifiers = TABLET_LANDSCAPE) fun viewerTabletEraser() = viewer("tablet_viewer_eraser", annotated(AnnotationTool.ERASER))
+
+    private fun graded(result: AttemptResult, selected: String) =
+        AnswerCheckUi.Result(CheckOutcome.Graded(4, selected, "C", result, "t1"))
+
+    @Test @Config(qualifiers = PHONE) fun checkCorrect() = viewer("phone_check_correct", annotated(AnnotationTool.PEN), check = graded(AttemptResult.CORRECT, "C"))
+    @Test @Config(qualifiers = PHONE) fun checkIncorrectDark() =
+        viewer("phone_check_incorrect_dark", annotated(AnnotationTool.PEN), dark = true, check = graded(AttemptResult.INCORRECT, "B"))
+    @Test @Config(qualifiers = PHONE) fun checkAsk() = viewer(
+        "phone_check_ask", annotated(AnnotationTool.PEN),
+        check = AnswerCheckUi.Ask(4, listOf("B", "C"), listOf("A", "B", "C", "D", "E"), 0, "s", listOf(0.2f, 0.3f, 0.3f, 0.32f)),
+    )
+    @Test @Config(qualifiers = TABLET_LANDSCAPE) fun checkTabletNotConfirmed() =
+        viewer("tablet_check_not_confirmed", annotated(AnnotationTool.PEN), check = AnswerCheckUi.KeyNotConfirmed)
 }
 
 private class SyntheticLoader(override val pageCount: Int) : PdfPageLoader {

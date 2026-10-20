@@ -19,7 +19,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import java.io.IOException
+import com.salihraphics.meow.analysis.layout.ChoiceRecognition
+import com.salihraphics.meow.analysis.layout.ChoiceRecognizer
+import com.salihraphics.meow.analysis.layout.PageLayoutSource
+import com.salihraphics.meow.data.answerkey.AnswerKeyRepository
+import com.salihraphics.meow.domain.model.SelectionOrigin
+import com.salihraphics.meow.domain.model.Stroke
+import com.salihraphics.meow.feature.check.AnswerChecker
+import com.salihraphics.meow.feature.check.AnswerCheckUi
+import com.salihraphics.meow.feature.check.CheckOutcome
 
 enum class ViewerError { MISSING, PASSWORD_PROTECTED, DAMAGED }
 
@@ -43,6 +53,10 @@ class PdfViewerViewModel(
     annotationRepository: AnnotationRepository,
     /** Outlives this screen, so the final reading position is saved after it closes. */
     private val applicationScope: CoroutineScope,
+    /** Confirmed answer keys and attempts; null disables answer checking. */
+    private val answerKeys: AnswerKeyRepository? = null,
+    /** Reads question positions for answer checking, from the PDF text or OCR. */
+    private val layoutSourceFactory: ((File, PdfRenderSession) -> PageLayoutSource)? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<ViewerUiState>(ViewerUiState.Loading)
@@ -51,7 +65,14 @@ class PdfViewerViewModel(
     private var session: PdfRenderSession? = null
 
     /** Strokes, tool and undo history; here so rotation keeps them. */
-    private val annotations = AnnotationSession(documentId, annotationRepository, viewModelScope)
+    private val annotations = AnnotationSession(documentId, annotationRepository, viewModelScope, onStrokeAdded = ::onStrokeAdded)
+
+    private var layoutSource: PageLayoutSource? = null
+
+    private val _answerCheck = MutableStateFlow<AnswerCheckUi?>(null)
+
+    /** The latest answer check to show, if any. */
+    val answerCheck: StateFlow<AnswerCheckUi?> = _answerCheck.asStateFlow()
     private var currentPage: Int? = null
     private var saveJob: Job? = null
     /** A page change not yet written to the library. */
@@ -100,6 +121,7 @@ class PdfViewerViewModel(
             return
         }
         session = opened
+        layoutSource = layoutSourceFactory?.invoke(file, opened)
         val lastIndex = opened.pageSizes.lastIndex
         val restored = viewport?.let { it.copy(pageIndex = it.pageIndex.coerceIn(0, lastIndex)) }
         val start = restored?.pageIndex ?: document.lastPageIndex.coerceIn(0, lastIndex)
@@ -131,7 +153,74 @@ class PdfViewerViewModel(
         }
     }
 
+    /**
+     * A finished pen stroke: if the document has an answer key and the stroke circles an option,
+     * grade it, or ask which option was meant. Anything else is just a drawing.
+     */
+    private fun onStrokeAdded(stroke: Stroke) {
+        val keys = answerKeys ?: return
+        val source = layoutSource ?: return
+        viewModelScope.launch {
+            // Read fresh each time: the key may have been confirmed or edited a moment ago.
+            if (keys.tests(documentId).none { it.answers.isNotEmpty() }) return@launch
+            val layout = try {
+                source.layout(stroke.pageIndex)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            } ?: return@launch
+            val region = strokeRegion(stroke.points)
+            when (val recognition = ChoiceRecognizer.recognize(stroke.points, layout)) {
+                ChoiceRecognition.NotAnAnswer -> Unit
+                is ChoiceRecognition.Selected ->
+                    grade(stroke.pageIndex, recognition.question, recognition.letter, SelectionOrigin.RECOGNIZED, stroke.id, region)
+                is ChoiceRecognition.Unclear -> _answerCheck.value = AnswerCheckUi.Ask(
+                    recognition.question, recognition.candidates, recognition.options, stroke.pageIndex, stroke.id, region.toList(),
+                )
+            }
+        }
+    }
+
+    /** The student says which option they marked. */
+    fun chooseOption(letter: String) {
+        val ask = _answerCheck.value as? AnswerCheckUi.Ask ?: return
+        viewModelScope.launch {
+            grade(ask.pageIndex, ask.question, letter, SelectionOrigin.CHOSEN_BY_STUDENT, ask.strokeId, ask.region.toFloatArray())
+        }
+    }
+
+    fun dismissAnswerCheck() {
+        _answerCheck.value = null
+    }
+
+    private suspend fun grade(page: Int, question: Int, letter: String, origin: SelectionOrigin, strokeId: String, region: FloatArray) {
+        val tests = answerKeys?.tests(documentId) ?: return
+        _answerCheck.value = when (val outcome = AnswerChecker.check(page, question, letter, tests)) {
+            is CheckOutcome.Graded -> {
+                answerKeys?.let { keys ->
+                    applicationScope.launch {
+                        keys.recordAttempt(documentId, outcome.testId, question, page, letter, origin, outcome.result, strokeId, region)
+                    }
+                }
+                AnswerCheckUi.Result(outcome)
+            }
+            CheckOutcome.NoKey -> null
+            CheckOutcome.KeyNotConfirmed -> AnswerCheckUi.KeyNotConfirmed
+            CheckOutcome.PageTestUnknown -> AnswerCheckUi.PageTestUnknown
+            is CheckOutcome.NoAnswerForQuestion -> AnswerCheckUi.NoAnswer(outcome.question)
+        }
+    }
+
+    private fun strokeRegion(points: FloatArray): FloatArray {
+        val xs = points.filterIndexed { i, _ -> i % 2 == 0 }
+        val ys = points.filterIndexed { i, _ -> i % 2 == 1 }
+        return floatArrayOf(xs.min(), ys.min(), xs.max(), ys.max())
+    }
+
     override fun onCleared() {
+        layoutSource?.close()
+        layoutSource = null
         // viewModelScope is already cancelled here, so a pending save moves to the app scope.
         unsavedPage?.let { page -> applicationScope.launch { repository.recordReading(documentId, page) } }
         (state.value as? ViewerUiState.Ready)?.loader?.let { (it as? SessionPageLoader)?.clear() }

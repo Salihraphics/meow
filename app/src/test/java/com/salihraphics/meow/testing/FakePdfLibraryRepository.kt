@@ -39,6 +39,8 @@ class FakePdfLibraryRepository(private val dir: File) : PdfLibraryRepository {
 
     override suspend fun get(id: String) = current.value.firstOrNull { it.id == id }
 
+    override suspend fun contentHash(id: String) = if (get(id) != null) "hash-$id" else null
+
     override suspend fun import(uri: Uri, fallbackName: String): PdfImportResult {
         importGate?.await()
         val result = requireNotNull(nextImport)

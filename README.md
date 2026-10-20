@@ -39,8 +39,9 @@ Kotlin| Application development
 Jetpack Compose| Native Android UI
 Jetpack DataStore| On-device preferences
 Android PdfRenderer| PDF viewing
-Room| Local database (PDF library today; questions, tests and attempts planned)
-On-device OCR| Text recognition — planned
+Room| Local database (PDF library, annotations, answer keys and answer attempts)
+PdfBox-Android| Reading PDF text with positions (answer keys, question layout)
+ML Kit Text Recognition (bundled)| On-device OCR for scanned pages
 
 The technical implementation may evolve as development progresses.
 
@@ -76,11 +77,13 @@ What works today:
 - PDF library: import PDFs with the system file picker (no storage permission), with checks for non-PDF, empty, password-protected and damaged files, and duplicate detection. Rename and remove; MEOW keeps its own copy, so removing never touches the original file.
 - PDF viewer: real page rendering, vertical scrolling, pinch / double-tap / button zoom, page indicator, go-to-page, and resuming at the last-read page. On wide screens a side panel shows document info and navigation.
 - PDF annotation: draw on pages with a finger or stylus (pen in five colours and three widths, whole-stroke eraser, undo/redo). Strokes are stored per page in page-relative coordinates, so they stay aligned through zoom and rotation, and are saved separately from the PDF, which is never modified.
+- Answer keys: MEOW looks for the answer key in each imported PDF on the device (key pages at the end, "Cevap Anahtarı" sections, per-test grids, and answer strips in page headers or footers; OCR only for scanned pages). Uncertain, missing and conflicting answers are flagged, nothing is guessed, and the student reviews, corrects or types the key and confirms it.
+- Answer checking: circle an option with the pen and MEOW checks it against the confirmed key, or asks which option was meant when the mark is unclear. Results are saved; the PDF is never modified.
 - Phone and tablet layouts from one codebase: two-pane onboarding on tablets and phones in landscape, two-column home and settings on wider screens, portrait and landscape.
 
 No account is needed. Google sign-in is planned but not implemented; Settings says so rather than showing a button that does nothing. See [docs/ACCOUNTS_AND_SYNC.md](docs/ACCOUNTS_AND_SYNC.md).
 
-Question solving, answer checking, the mistake notebook and statistics are not implemented yet; the app labels them "Yakında". See [docs/PDF_STUDY.md](docs/PDF_STUDY.md).
+Timed test solving, the mistake notebook and statistics are not implemented yet; the app labels them "Yakında". Answer checking covers multiple choice; numeric and written answers can be stored in a key, but reading handwriting is not implemented. See [docs/PDF_STUDY.md](docs/PDF_STUDY.md).
 
 🛠️ Building
 

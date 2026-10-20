@@ -147,8 +147,8 @@
     <string name="viewer_info_heading">Belge</string>
     <string name="viewer_info_pages">%1$d sayfa · %2$s</string>
     <string name="viewer_info_imported">Eklenme: %1$s</string>
-    <string name="viewer_next_steps_heading">Sırada</string>
-    <string name="viewer_next_steps_body">Cevap işaretleme ve bu PDF\'den test oluşturma bir sonraki adımda burada olacak.</string>
+    <string name="viewer_next_steps_heading">Cevap işaretleme</string>
+    <string name="viewer_next_steps_body">Kalemle bir şıkkı daire içine al. Bu PDF\'in cevap anahtarı onaylıysa MEOW cevabını kontrol eder; emin olamazsa sana sorar. PDF\'in kendisi değişmez.</string>
 
     <!-- Annotation -->
     <string name="annotation_toolbar">Çizim araçları</string>
@@ -166,6 +166,73 @@
     <string name="annotation_width_medium">Orta çizgi</string>
     <string name="annotation_width_thick">Kalın çizgi</string>
     <string name="annotation_two_finger_hint">Kaydırmak ve yakınlaştırmak için iki parmak kullan.</string>
+
+    <!-- Answer key -->
+    <string name="answer_key_title">Cevap anahtarı</string>
+    <string name="key_status_searching">Cevap anahtarı aranıyor…</string>
+    <string name="key_status_found">Cevap anahtarı bulundu (%1$d test) · onay bekliyor</string>
+    <string name="key_status_confirmed">Cevap anahtarı onaylı</string>
+    <string name="key_status_not_found">Cevap anahtarı bulunamadı</string>
+    <string name="key_status_failed">Cevap anahtarı aranamadı</string>
+    <string name="key_searching_body">PDF\'in sayfalarına bakıyorum. Sonuna, sayfa altlarına ve test başlıklarına göz atıyorum.</string>
+    <string name="key_not_found_body">Bu PDF\'de güvenilir bir cevap anahtarı bulamadım. Tahmin yürütmek yerine sana soruyorum: istersen cevapları kendin girebilirsin.</string>
+    <string name="key_failed_body">PDF okunurken bir sorun çıktı. Tekrar deneyebilir ya da cevapları kendin girebilirsin.</string>
+    <string name="key_found_body">Bulduklarımı kontrol et. Onayladığında işaretlediğin cevapları bunlarla karşılaştırırım.</string>
+    <string name="key_confirmed_body">Onaylandı. PDF\'de bir şıkkı yuvarlak içine aldığında cevabını kontrol ederim.</string>
+    <string name="key_scanned_note">Taranmış sayfalar metin tanıma (OCR) ile okundu; harfleri özellikle kontrol et.</string>
+    <string name="key_legend_detected">Bulundu</string>
+    <string name="key_legend_uncertain">Emin değilim</string>
+    <string name="key_legend_manual">Elle girildi</string>
+    <string name="key_legend_confirmed">Onaylı</string>
+    <string name="key_test_untitled">Adsız test</string>
+    <string name="key_test_numbered">Test %1$d</string>
+    <string name="key_source_section">Cevap anahtarı sayfası: %1$s</string>
+    <string name="key_source_margin">Sayfa kenarındaki cevaplar: %1$s</string>
+    <string name="key_source_manual">Elle girildi</string>
+    <string name="key_question_pages">Sorular: s. %1$d–%2$d</string>
+    <string name="key_question_pages_unknown">Soruların sayfaları belirtilmedi</string>
+    <string name="key_missing">Bulunamayan sorular: %1$s</string>
+    <string name="key_conflicts">%1$d soruda iki farklı cevap var; doğru olanı seç.</string>
+    <string name="key_confirm">Onayla</string>
+    <string name="key_confirmed_badge">Onaylı</string>
+    <string name="key_pending_badge">Onay bekliyor</string>
+    <string name="key_add_test">Test ekle</string>
+    <string name="key_add_answer">Cevap ekle</string>
+    <string name="key_search_again">Yeniden ara</string>
+    <string name="key_search_again_note">Onaylı cevaplar yeniden aramada değişmez.</string>
+    <string name="key_edit_test">Testi düzenle</string>
+    <string name="key_delete_test">Testi sil</string>
+    <string name="key_test_name">Test adı</string>
+    <string name="key_first_page">İlk soru sayfası</string>
+    <string name="key_last_page">Son soru sayfası</string>
+    <string name="key_question_number">Soru numarası</string>
+    <string name="key_answer_type_choice">Şık</string>
+    <string name="key_answer_type_number">Sayı</string>
+    <string name="key_answer_type_text">Yazılı</string>
+    <string name="key_answer_value">Cevap</string>
+    <string name="key_tolerance">Kabul edilen fark (isteğe bağlı)</string>
+    <string name="key_answer_dialog_title">Soru %1$d</string>
+    <string name="key_answer_source">Bulunduğu sayfa: %1$d</string>
+    <string name="key_answer_ocr_note">Metin tanımadan okundu, emin değilim.</string>
+    <string name="key_answer_conflict_note">Kitapta iki farklı cevap var: %1$s</string>
+    <string name="key_delete_answer">Cevabı sil</string>
+    <string name="key_msg_confirmed">Cevap anahtarı onaylandı.</string>
+    <string name="key_msg_conflicts">Onaylamadan önce %1$d çakışmayı çöz.</string>
+    <string name="key_msg_nothing">Onaylanacak cevap yok.</string>
+    <string name="key_cd_answer">Soru %1$d: %2$s, %3$s</string>
+
+    <!-- Answer checking in the viewer -->
+    <string name="check_correct">Doğru! Soru %1$d: %2$s</string>
+    <string name="check_incorrect">Soru %1$d: %2$s seçtin, doğru cevap %3$s.</string>
+    <string name="check_self">Soru %1$d için cevabını anahtarla karşılaştır: %2$s</string>
+    <string name="check_which_option">Soru %1$d: hangi şıkkı işaretledin?</string>
+    <string name="check_not_an_answer">Cevap değil</string>
+    <string name="check_no_key_for_question">Soru %1$d için onaylı cevap yok.</string>
+    <string name="check_key_not_confirmed">Bu PDF\'in cevap anahtarı henüz onaylanmadı.</string>
+    <string name="check_page_test_unknown">Bu sayfanın hangi teste ait olduğunu bilmiyorum. Cevap anahtarında test sayfalarını belirt.</string>
+    <string name="check_open_key">Cevap anahtarını aç</string>
+    <string name="check_ok">Tamam</string>
+    <string name="check_dismiss">Kapat</string>
 
     <!-- Home -->
     <string name="home_greeting">Merhaba!</string>

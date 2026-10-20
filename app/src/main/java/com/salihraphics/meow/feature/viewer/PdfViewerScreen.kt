@@ -5,6 +5,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.runtime.remember
 import com.salihraphics.meow.feature.annotation.AnnotationToolbar
+import com.salihraphics.meow.feature.check.AnswerCheckCard
+import com.salihraphics.meow.feature.check.AnswerCheckUi
+import androidx.compose.material.icons.filled.CheckCircle
 import com.salihraphics.meow.feature.annotation.PageAnnotationLayer
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
@@ -78,14 +81,19 @@ import java.util.Date
 import kotlin.math.roundToInt
 
 @Composable
-fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit) {
+fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit, onOpenAnswerKey: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val answerCheck by viewModel.answerCheck.collectAsStateWithLifecycle()
     PdfViewerContent(
         state = state,
         initialViewport = viewModel::initialViewport,
         onViewportChanged = viewModel::onViewportChanged,
         onPageChanged = viewModel::onPageChanged,
         onBack = onBack,
+        answerCheck = answerCheck,
+        onChooseOption = viewModel::chooseOption,
+        onDismissCheck = viewModel::dismissAnswerCheck,
+        onOpenAnswerKey = onOpenAnswerKey,
     )
 }
 
@@ -96,6 +104,11 @@ fun PdfViewerContent(
     onViewportChanged: (ViewportSnapshot) -> Unit,
     onPageChanged: (Int) -> Unit,
     onBack: () -> Unit,
+    answerCheck: AnswerCheckUi? = null,
+    onChooseOption: (String) -> Unit = {},
+    onDismissCheck: () -> Unit = {},
+    /** Opens this document's answer key; null hides the action. */
+    onOpenAnswerKey: (() -> Unit)? = null,
 ) {
     Column(
         Modifier
@@ -117,7 +130,10 @@ fun PdfViewerContent(
                 ViewerTopBar(title = "", onBack = onBack)
                 ViewerErrorMessage(state.error, onBack)
             }
-            is ViewerUiState.Ready -> ReadyViewer(state, initialViewport, onViewportChanged, onPageChanged, onBack)
+            is ViewerUiState.Ready -> ReadyViewer(
+                state, initialViewport, onViewportChanged, onPageChanged, onBack,
+                answerCheck, onChooseOption, onDismissCheck, onOpenAnswerKey,
+            )
         }
     }
 }
@@ -129,6 +145,10 @@ private fun ReadyViewer(
     onViewportChanged: (ViewportSnapshot) -> Unit,
     onPageChanged: (Int) -> Unit,
     onBack: () -> Unit,
+    answerCheck: AnswerCheckUi?,
+    onChooseOption: (String) -> Unit,
+    onDismissCheck: () -> Unit,
+    onOpenAnswerKey: (() -> Unit)?,
 ) {
     // Phone and side-panel layouts share this one state, so switching between them on
     // rotation keeps the position too.
@@ -153,6 +173,15 @@ private fun ReadyViewer(
     }
     val toolbar = @Composable {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            answerCheck?.let { check ->
+                AnswerCheckCard(
+                    check = check,
+                    onChoose = onChooseOption,
+                    onDismiss = onDismissCheck,
+                    onOpenKey = { onDismissCheck(); onOpenAnswerKey?.invoke() },
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
+            }
             TwoFingerHint(visible = drawing)
             AnnotationToolbar(
                 state = tools,
@@ -171,6 +200,11 @@ private fun ReadyViewer(
         onBack = onBack,
         actions = {
             if (!sidePanel) ZoomButtons(viewport)
+            if (onOpenAnswerKey != null) {
+                IconButton(onClick = onOpenAnswerKey) {
+                    Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.answer_key_title))
+                }
+            }
         },
     )
     if (sidePanel) {

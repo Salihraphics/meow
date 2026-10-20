@@ -11,6 +11,9 @@ interface PdfLibraryRepository {
 
     suspend fun get(id: String): PdfDocument?
 
+    /** SHA-256 of the stored copy; ties analysis results to this exact file. */
+    suspend fun contentHash(id: String): String?
+
     /** Copies the picked PDF into the library after checking it. [fallbackName] is used if the file has no name. */
     suspend fun import(uri: Uri, fallbackName: String): PdfImportResult
 

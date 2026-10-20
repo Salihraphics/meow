@@ -4,11 +4,14 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.salihraphics.meow.data.library.PdfLibraryRepository
+import com.salihraphics.meow.domain.model.KeyStatus
 import com.salihraphics.meow.domain.model.PdfDocument
 import com.salihraphics.meow.domain.model.PdfImportError
 import com.salihraphics.meow.domain.model.PdfImportResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +33,15 @@ data class LibraryUiState(
     val message: LibraryMessage? = null,
 )
 
-class LibraryViewModel(private val repository: PdfLibraryRepository) : ViewModel() {
+class LibraryViewModel(
+    private val repository: PdfLibraryRepository,
+    keyStatuses: Flow<Map<String, KeyStatus>> = flowOf(emptyMap()),
+) : ViewModel() {
+
+    /** Answer-key status per document id. */
+    val keyStatuses: StateFlow<Map<String, KeyStatus>> = keyStatuses
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
 
     /** Null while the first read is in flight. */
     val documents: StateFlow<List<PdfDocument>?> = repository.documents

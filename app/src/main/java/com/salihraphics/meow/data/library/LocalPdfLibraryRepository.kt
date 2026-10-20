@@ -31,11 +31,15 @@ class LocalPdfLibraryRepository(
     private val newId: () -> String = { UUID.randomUUID().toString() },
     /** Annotations of a removed document go with it. */
     private val strokes: StrokeDao? = null,
+    /** Lets other data tied to a document (answer keys) go with it. */
+    private val onRemoved: suspend (String) -> Unit = {},
 ) : PdfLibraryRepository {
 
     override val documents: Flow<List<PdfDocument>> = dao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun get(id: String): PdfDocument? = dao.get(id)?.toDomain()
+
+    override suspend fun contentHash(id: String): String? = dao.get(id)?.contentSha256
 
     override suspend fun import(uri: Uri, fallbackName: String): PdfImportResult = withContext(io) {
         val id = newId()
@@ -105,6 +109,7 @@ class LocalPdfLibraryRepository(
         val time = now()
         dao.markDeleted(id, time)
         strokes?.markDocumentDeleted(id, time)
+        onRemoved(id)
         withContext(io) { files.delete(id) }
     }
 

@@ -9,5 +9,6 @@ class MeowApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        container.answerKeyScheduler.start()
     }
 }

@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +73,7 @@ import com.salihraphics.meow.core.mascot.MascotMood
 import com.salihraphics.meow.core.mascot.MascotState
 import com.salihraphics.meow.core.mascot.MeowCat
 import com.salihraphics.meow.core.mascot.rememberMascotState
+import com.salihraphics.meow.domain.model.KeyStatus
 import com.salihraphics.meow.domain.model.PdfDocument
 import com.salihraphics.meow.domain.model.PdfImportError
 import kotlinx.coroutines.Dispatchers
@@ -92,9 +95,11 @@ fun LibraryRoute(
     viewModel: LibraryViewModel,
     thumbnails: ThumbnailLoader,
     onOpen: (PdfDocument) -> Unit,
+    onAnswerKey: (PdfDocument) -> Unit,
     onBack: () -> Unit,
 ) {
     val documents by viewModel.documents.collectAsStateWithLifecycle()
+    val keyStatuses by viewModel.keyStatuses.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val untitled = stringResource(R.string.library_untitled)
     // System picker: no storage permission needed, and the student sees only what they choose.
@@ -105,9 +110,11 @@ fun LibraryRoute(
         documents = documents,
         state = state,
         thumbnails = thumbnails,
+        keyStatuses = keyStatuses,
         actions = LibraryActions(
             onAdd = { picker.launch(arrayOf("application/pdf")) },
             onOpen = onOpen,
+            onAnswerKey = onAnswerKey,
             onRename = viewModel::rename,
             onRemove = viewModel::remove,
             onBack = onBack,
@@ -119,6 +126,7 @@ fun LibraryRoute(
 data class LibraryActions(
     val onAdd: () -> Unit = {},
     val onOpen: (PdfDocument) -> Unit = {},
+    val onAnswerKey: (PdfDocument) -> Unit = {},
     val onRename: (PdfDocument, String) -> Unit = { _, _ -> },
     val onRemove: (PdfDocument) -> Unit = {},
     val onBack: () -> Unit = {},
@@ -131,6 +139,7 @@ fun LibraryContent(
     state: LibraryUiState,
     thumbnails: ThumbnailLoader,
     actions: LibraryActions,
+    keyStatuses: Map<String, KeyStatus> = emptyMap(),
 ) {
     val snackbar = remember { SnackbarHostState() }
     val messageText = state.message?.let { messageText(it) }
@@ -190,7 +199,9 @@ fun LibraryContent(
                             DocumentCard(
                                 document = document,
                                 thumbnails = thumbnails,
+                                keyStatus = keyStatuses[document.id],
                                 onOpen = { actions.onOpen(document) },
+                                onAnswerKey = { actions.onAnswerKey(document) },
                                 onRename = { renaming = document.id },
                                 onRemove = { removing = document.id },
                             )
@@ -315,7 +326,9 @@ private fun EmptyLibrary(isImporting: Boolean, onAdd: () -> Unit) {
 private fun DocumentCard(
     document: PdfDocument,
     thumbnails: ThumbnailLoader,
+    keyStatus: KeyStatus?,
     onOpen: () -> Unit,
+    onAnswerKey: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -363,12 +376,17 @@ private fun DocumentCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (keyStatus != null) KeyStatusLabel(keyStatus, onAnswerKey)
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.library_more, document.displayName))
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.answer_key_title)) }, onClick = {
+                        menuOpen = false
+                        onAnswerKey()
+                    })
                     DropdownMenuItem(text = { Text(stringResource(R.string.library_rename)) }, onClick = {
                         menuOpen = false
                         onRename()
@@ -381,6 +399,32 @@ private fun DocumentCard(
             }
         }
     }
+}
+
+/** One line under a document: where its answer key stands. Tapping it opens the key. */
+@Composable
+private fun KeyStatusLabel(status: KeyStatus, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val (text, color) = when (status) {
+        is KeyStatus.Searching -> stringResource(R.string.key_status_searching) to scheme.onSurfaceVariant
+        is KeyStatus.Found -> if (status.confirmed) {
+            stringResource(R.string.key_status_confirmed) to scheme.primary
+        } else {
+            stringResource(R.string.key_status_found, status.tests) to scheme.primary
+        }
+        KeyStatus.NotFound -> stringResource(R.string.key_status_not_found) to scheme.onSurfaceVariant
+        KeyStatus.Failed -> stringResource(R.string.key_status_failed) to scheme.error
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        maxLines = 2,
+        modifier = Modifier
+            .padding(top = 2.dp)
+            .clickable(onClick = onClick, role = Role.Button)
+            .padding(vertical = 4.dp),
+    )
 }
 
 @Composable

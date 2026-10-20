@@ -44,6 +44,8 @@ class AnnotationSession(
     private val documentId: String,
     private val repository: AnnotationRepository,
     private val scope: CoroutineScope,
+    /** Told about each finished pen stroke, e.g. to check whether it circles an answer. */
+    private val onStrokeAdded: (Stroke) -> Unit = {},
     private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
     private val pages = HashMap<Int, MutableStateFlow<List<Stroke>?>>()
@@ -77,6 +79,7 @@ class AnnotationSession(
         page(pageIndex).update { it.orEmpty() + stroke }
         repository.add(stroke)
         record(AnnotationEdit.Added(stroke))
+        onStrokeAdded(stroke)
     }
 
     /** The strokes one eraser gesture touched. */

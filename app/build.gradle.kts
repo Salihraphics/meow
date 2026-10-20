@@ -65,6 +65,19 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // Post-quantum tables from BouncyCastle (a PdfBox dependency); PDF decryption never uses them.
+            excludes += "org/bouncycastle/pqc/**"
+        }
+    }
+
+    splits {
+        // On-device OCR ships a native library per CPU type (~11 MB each). One APK per type keeps
+        // a sideloaded download small; the universal APK still installs anywhere.
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true
         }
     }
 }
@@ -85,6 +98,10 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    // Answer-key discovery: PDF text with positions (all Android versions), and on-device OCR
+    // with a bundled model for scanned PDFs. Both run offline; no account or API key.
+    implementation(libs.pdfbox.android)
+    implementation(libs.mlkit.text.recognition)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

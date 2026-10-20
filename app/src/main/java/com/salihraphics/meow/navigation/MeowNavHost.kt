@@ -18,6 +18,10 @@ import androidx.navigation.navArgument
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.salihraphics.meow.analysis.layout.PdfPageLayoutSource
+import com.salihraphics.meow.analysis.text.MlKitPageOcr
+import com.salihraphics.meow.feature.answerkey.AnswerKeyRoute
+import com.salihraphics.meow.feature.answerkey.AnswerKeyViewModel
 import com.salihraphics.meow.feature.library.LibraryRoute
 import com.salihraphics.meow.feature.library.LibraryViewModel
 import com.salihraphics.meow.feature.library.fileThumbnailLoader
@@ -38,6 +42,8 @@ object MeowDestinations {
     const val SETTINGS = "settings"
     const val LIBRARY = "library"
     const val VIEWER = "viewer/{documentId}"
+    const val ANSWER_KEY = "answerkey/{documentId}"
+    fun answerKey(documentId: String) = "answerkey/$documentId"
     fun viewer(documentId: String) = "viewer/$documentId"
 }
 
@@ -76,13 +82,42 @@ fun MeowNavHost(
         }
         composable(MeowDestinations.LIBRARY) {
             val library = container.pdfLibraryRepository
-            val vm: LibraryViewModel = viewModel(factory = viewModelFactory { initializer { LibraryViewModel(library) } })
+            val vm: LibraryViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        LibraryViewModel(library, container.answerKeyRepository.observeStatuses(container.answerKeyScheduler.progress))
+                    }
+                },
+            )
             LibraryRoute(
                 viewModel = vm,
                 thumbnails = remember { fileThumbnailLoader(library::thumbnailFile) },
                 onOpen = { navController.navigate(MeowDestinations.viewer(it.id)) { launchSingleTop = true } },
+                onAnswerKey = { navController.navigate(MeowDestinations.answerKey(it.id)) { launchSingleTop = true } },
                 onBack = { navController.popBackStack() },
             )
+        }
+        composable(
+            MeowDestinations.ANSWER_KEY,
+            arguments = listOf(navArgument("documentId") { type = NavType.StringType }),
+        ) { entry ->
+            val documentId = requireNotNull(entry.arguments?.getString("documentId"))
+            val vm: AnswerKeyViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        AnswerKeyViewModel(
+                            documentId = documentId,
+                            documentName = container.pdfLibraryRepository.documents.map { list ->
+                                list.firstOrNull { it.id == documentId }.let { (it?.displayName ?: "") to (it?.pageCount ?: 0) }
+                            },
+                            keys = container.answerKeyRepository,
+                            progress = container.answerKeyScheduler.progress,
+                            searchAgainAction = { container.answerKeyScheduler.enqueue(documentId, force = true) },
+                        )
+                    }
+                },
+            )
+            AnswerKeyRoute(vm, onBack = { navController.popBackStack() })
         }
         composable(
             MeowDestinations.VIEWER,
@@ -99,11 +134,19 @@ fun MeowNavHost(
                             sessions = container.pdfRenderSessionFactory,
                             annotationRepository = container.annotationRepository,
                             applicationScope = container.applicationScope,
+                            answerKeys = container.answerKeyRepository,
+                            layoutSourceFactory = { file, session ->
+                                PdfPageLayoutSource(file, container.pdfTextSource, MlKitPageOcr(session))
+                            },
                         )
                     }
                 },
             )
-            PdfViewerRoute(vm, onBack = { navController.popBackStack() })
+            PdfViewerRoute(
+                vm,
+                onBack = { navController.popBackStack() },
+                onOpenAnswerKey = { navController.navigate(MeowDestinations.answerKey(documentId)) { launchSingleTop = true } },
+            )
         }
         composable(MeowDestinations.SETTINGS) {
             val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(repository, container.accountRepository) } })
