@@ -1,153 +1,88 @@
-# MEOW 🐈‍⬛
+<div align="center"><img src="./meow-app.svg" alt="MEOW app icon" width="160" />MEOW
 
-> **Make every attempt worthwhile.**
->
-> A smarter way to study. A little more human, a little less complicated.
+Study smarter. Learn from every mistake.
 
-MEOW is a planned Android study companion built around one simple idea: **turn studying into a focused, connected, and meaningful experience.**
+A smarter way to study. A little more human, a little less complicated.
 
-Import your question-bank PDFs, work through questions, track your performance, and revisit the mistakes that matter. MEOW aims to bring the entire study workflow into one place — without unnecessary complexity.
+MEOW is an Android study companion designed to turn PDF question banks into an interactive, organized, and personal study experience.
 
----
+Import your PDFs, solve questions, track your progress, and learn from your mistakes — all in one place.
 
-## ✨ The Vision
+"Android" (https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)
+"Kotlin" (https://img.shields.io/badge/Language-Kotlin-7F52FF?logo=kotlin&logoColor=white)
+"Jetpack Compose" (https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)
+"Local First" (https://img.shields.io/badge/Approach-Local--First-9FE870)
+"Status" (https://img.shields.io/badge/Status-In%20Development-orange)
 
-Studying often means switching between PDF readers, answer keys, timers, notes, and separate mistake notebooks. MEOW aims to bring these pieces together in a single, thoughtfully designed experience.
+</div>---
 
-### 📚 Your PDFs, Your Workflow
+✨ What is MEOW?
 
-Bring your own study materials and organize them into books, topics, and tests. The long-term goal is to help transform static PDF question banks into structured, interactive study sessions.
+Studying shouldn't mean jumping between PDF readers, answer keys, timers, and separate mistake notebooks.
 
-### ✍️ Solve, Draw, Think
+MEOW aims to bring the entire workflow together in one focused experience — from opening a question to reviewing what went wrong.
 
-Work through questions one at a time. Draw directly on questions, write calculations, annotate diagrams, and select multiple-choice answers using touch or a supported stylus.
+🐾 Features
 
-### 🎯 Answer Checking
+- 📚 PDF Study Library — Import and organize your own question-bank PDFs.
+- ✍️ Interactive Question Solving — Draw, write calculations, annotate diagrams, and select answers.
+- 🎯 Answer Checking — Check answers against answer keys, with manual verification when necessary.
+- 📓 Smart Mistake Notebook — Keep incorrect and unanswered questions ready for another attempt.
+- ⏱️ Study Tracking — Track results, completion time, and progress.
+- 🧠 AI-Assisted Explanations — Explore optional AI support for understanding difficult questions.
+- 💾 Automatic Saving — Preserve progress and resume study sessions.
+- 🐈 A Study Companion With Personality — A curious black-cat mascot makes the experience feel welcoming without sacrificing usability.
 
-Use answer keys to check completed tests and review results. Automated extraction and matching are planned, with manual verification whenever the app cannot confidently identify an answer.
+MEOW is under active development. The features above describe the intended product and may not yet be implemented.
 
-### 🐾 A Mistake Notebook That Remembers
+🧰 Built With
 
-Keep incorrect and unanswered questions together. Revisit them, try again, and turn mistakes into opportunities to understand a topic more deeply.
+Technology| Purpose
+Kotlin| Application development
+Jetpack Compose| Native Android UI
+Android PDF rendering| PDF viewing
+Room| Local database (planned)
+On-device OCR| Text recognition (planned)
 
-### ⏱️ Progress That Means Something
+The technical implementation may evolve as development progresses.
 
-Review correct, incorrect, and unanswered questions, completion time, and study history. Future versions aim to include topic-level insights and personalized review suggestions.
+🎨 Design Philosophy
 
-### 🧠 AI-Assisted Learning
+- Simple by design. Keep the interface focused and intuitive.
+- Useful over complicated. Every feature should solve a real problem.
+- Local-first where practical. Keep personal study data on-device whenever possible.
+- Honest automation. Uncertain answers and extracted content should be reviewable.
+- Progress without pressure. Help students improve without unnecessary distractions.
+- Built to last. Prioritize reliability, maintainability, and thoughtful development.
 
-The long-term vision includes optional AI-powered explanations to help users understand difficult questions and their solutions. AI features should remain optional and clearly communicate when study content is sent to an external service.
+🔒 Privacy
 
-### 🐈 A Study Companion With Personality
+MEOW aims to keep personal study materials, annotations, and progress on-device wherever practical.
 
-MEOW features an original black-cat mascot designed to make the experience feel welcoming without turning a serious study tool into a children's game.
+Future online and AI-powered features should clearly explain what information is shared with external services. API credentials and personal data must be handled carefully.
 
----
+Actual data-handling behavior will be documented as features are implemented.
 
-## 🛠️ Development Status
+🚧 Development Status
 
-**MEOW is an early-stage personal project under development.**
+MEOW is an early-stage personal project built gradually with a long-term vision.
 
-This repository documents the project's vision, design direction, and intended technical approach. Features described here are planned goals and may not yet be implemented or available for use.
+The goal is not to rush a release, but to create a reliable and genuinely useful study companion — one thoughtful improvement at a time.
 
-The project is being developed gradually, with an emphasis on learning, experimentation, and long-term quality rather than rushing toward a release.
-
-## 🧭 Design Principles
-
-- **Focus over clutter** — Keep the interface clear and purposeful.
-- **Useful over complicated** — Every feature should solve a real problem.
-- **Local-first where practical** — Keep study materials and progress on the device whenever feasible.
-- **Honest automation** — Uncertain results must be reviewable rather than presented as guaranteed truth.
-- **Progress without pressure** — Help students build better study habits without unnecessary distractions.
-- **Built to grow** — Create a reliable foundation that can evolve over time.
-- **Privacy by design** — Make data handling transparent and give users meaningful control.
-
-## 🧰 Planned Technology
-
-The intended Android technology stack includes:
-
-- **Kotlin** — Primary application language.
-- **Jetpack Compose** — Modern native Android UI.
-- **Android PDF rendering** — Document viewing and page rendering.
-- **PDF text extraction and on-device OCR** — Assistance with identifying question content.
-- **Room** — Structured local persistence for books, tests, answers, and progress.
-- **Vector-based annotations** — Scalable storage for handwriting and drawings.
-
-These choices are provisional and may evolve as development and testing progress.
-
-## 🗺️ Roadmap
-
-The roadmap describes the intended direction, not a promise that each feature is already available.
-
-### Foundation
-
-- [ ] Establish the Android project and a reliable build workflow
-- [ ] Define the core data model and local storage strategy
-- [ ] Build the main library and navigation experience
-- [ ] Import and display PDF documents
-
-### Study Experience
-
-- [ ] Create tests from selected PDF page ranges
-- [ ] Navigate through questions individually
-- [ ] Add drawing, handwriting, and annotation tools
-- [ ] Select answers and mark questions as unanswered
-- [ ] Save progress automatically and resume sessions
-
-### Results and Review
-
-- [ ] Enter and manage answer keys
-- [ ] Calculate correct, incorrect, and unanswered totals
-- [ ] Track completion time
-- [ ] Build the mistake notebook
-- [ ] Reattempt saved questions
-- [ ] Add reliable backup and restore options
-
-### Smarter PDF Processing
-
-- [ ] Extract text from supported PDFs
-- [ ] Explore OCR for scanned documents
-- [ ] Suggest question boundaries and test divisions
-- [ ] Assist with answer-key extraction and matching
-- [ ] Explore topic classification
-- [ ] Provide correction and verification flows for uncertain results
-
-### Personalization and Intelligence
-
-- [ ] Explore optional AI-powered explanations
-- [ ] Add topic-level progress insights
-- [ ] Introduce a spaced-review workflow
-- [ ] Develop a small set of expressive mascot states
-- [ ] Improve accessibility, performance, and overall polish
-
-## 🔒 Privacy and Data
-
-The intended direction is to keep personal study materials, annotations, and progress on-device wherever practical.
-
-Any future online or AI-powered feature that processes user content should clearly explain what information is sent, where it goes, and how it is used. Sensitive information and API credentials must be handled carefully.
-
-The exact privacy and backup behavior will be documented as the relevant features are implemented.
-
-## 📖 Project Philosophy
-
-MEOW is being built as a long-term personal project. There is no rushed release deadline and no intention to sacrifice quality just to ship quickly.
-
-The goal is to make something genuinely useful — one that can grow from a simple study workflow into a complete learning companion, one thoughtful improvement at a time.
-
-> One question at a time. One mistake at a time. One step forward.
-
-## 📄 License and Usage
+📄 License
 
 MEOW is currently published without an open-source license. All rights are reserved by the copyright holder.
 
-You may view the source code on GitHub. No additional permission is granted to use, reproduce, modify, redistribute, or incorporate the code into other projects.
+You may view the source code on GitHub, but no general permission is granted to reuse, modify, redistribute, or incorporate it into other projects.
 
-For permission requests, commercial licensing, or collaboration inquiries, please contact the repository owner.
+For permission requests, collaboration, or commercial licensing inquiries, please contact the repository owner.
 
-Third-party dependencies, assets, and libraries remain subject to their respective licenses and terms.
+Third-party dependencies, libraries, and assets remain subject to their respective licenses and terms.
 
-## 🐈 MEOW
+---
 
-**Make every attempt worthwhile.**
+<div align="center">MEOW 🐈‍⬛
 
-Built with curiosity, patience, and a little cat energy.
+One question at a time. One mistake at a time. One step forward.
+
+</div>
