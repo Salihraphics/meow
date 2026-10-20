@@ -1,19 +1,16 @@
-<div align="center"><img src="./meow-app.svg" alt="MEOW app icon" width="160" />MEOW
-
-Study smarter. Learn from every mistake.
-
-A smarter way to study. A little more human, a little less complicated.
-
-MEOW is an Android study companion designed to turn PDF question banks into an interactive, organized, and personal study experience.
-
-Import your PDFs, solve questions, track your progress, and learn from your mistakes — all in one place.
-
-"Android" (https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)
-"Kotlin" (https://img.shields.io/badge/Language-Kotlin-7F52FF?logo=kotlin&logoColor=white)
-"Jetpack Compose" (https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)
-"Local First" (https://img.shields.io/badge/Approach-Local--First-9FE870)
-"Status" (https://img.shields.io/badge/Status-In%20Development-orange)
-
+<div align="center">
+  <img src="./meow-app.svg" alt="MEOW app icon" width="140" />  <h1>MEOW</h1>
+  <p><strong>Study smarter. Learn from every mistake.</strong></p>  <p>A smarter way to study. A little more human, a little less complicated.</p>  <p>
+    MEOW is an Android study companion designed to turn PDF question banks into an interactive, organized, and personal study experience.
+  </p>  <p>
+    Import your PDFs, solve questions, track your progress, and learn from your mistakes — all in one place.
+  </p>  <p>
+    <img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white" alt="Platform: Android" />
+    <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?logo=kotlin&logoColor=white" alt="Language: Kotlin" />
+    <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white" alt="UI: Jetpack Compose" />
+    <img src="https://img.shields.io/badge/Storage-Local--First-9FE870" alt="Storage: Local First" />
+    <img src="https://img.shields.io/badge/Status-In%20Development-orange" alt="Status: In Development" />
+  </p>
 </div>---
 
 ✨ What is MEOW?
@@ -27,13 +24,13 @@ MEOW aims to bring the entire workflow together in one focused experience — fr
 - 📚 PDF Study Library — Import and organize your own question-bank PDFs.
 - ✍️ Interactive Question Solving — Draw, write calculations, annotate diagrams, and select answers.
 - 🎯 Answer Checking — Check answers against answer keys, with manual verification when necessary.
-- 📓 Smart Mistake Notebook — Keep incorrect and unanswered questions ready for another attempt.
+- 📓 Mistake Notebook — Keep incorrect and unanswered questions ready for another attempt.
 - ⏱️ Study Tracking — Track results, completion time, and progress.
-- 🧠 AI-Assisted Explanations — Explore optional AI support for understanding difficult questions.
+- 🧠 AI-Assisted Explanations — Optional AI support for understanding difficult questions.
 - 💾 Automatic Saving — Preserve progress and resume study sessions.
 - 🐈 A Study Companion With Personality — A curious black-cat mascot makes the experience feel welcoming without sacrificing usability.
 
-MEOW is under active development. The features above describe the intended product and may not yet be implemented.
+«Note: MEOW is under development. The features above describe the intended product and may not yet be implemented.»
 
 🧰 Built With
 
@@ -41,8 +38,8 @@ Technology| Purpose
 Kotlin| Application development
 Jetpack Compose| Native Android UI
 Android PDF rendering| PDF viewing
-Room| Local database (planned)
-On-device OCR| Text recognition (planned)
+Room| Local database — planned
+On-device OCR| Text recognition — planned
 
 The technical implementation may evolve as development progresses.
 
@@ -81,8 +78,7 @@ Third-party dependencies, libraries, and assets remain subject to their respecti
 
 ---
 
-<div align="center">MEOW 🐈‍⬛
-
-One question at a time. One mistake at a time. One step forward.
-
+<div align="center">
+  <strong>MEOW 🐈‍⬛</strong>
+  <p><em>One question at a time. One mistake at a time. One step forward.</em></p>
 </div>
