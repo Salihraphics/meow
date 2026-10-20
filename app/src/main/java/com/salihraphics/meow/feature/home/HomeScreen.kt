@@ -48,7 +48,13 @@ import com.salihraphics.meow.feature.common.StudyFeatureList
  * until they are implemented; nothing here pretends to be a working button.
  */
 @Composable
-fun HomeScreen(profile: StudyProfile, onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
+fun HomeScreen(
+    profile: StudyProfile,
+    onOpenSettings: () -> Unit,
+    onOpenLibrary: () -> Unit,
+    libraryCount: Int?,
+    modifier: Modifier = Modifier,
+) {
     val cat = rememberMascotState(MascotState())
     val twoColumns = LocalMeowWindow.current.useTwoColumns
 
@@ -77,7 +83,7 @@ fun HomeScreen(profile: StudyProfile, onOpenSettings: () -> Unit, modifier: Modi
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
-        StudyFeatureList()
+        StudyFeatureList(onOpenLibrary = onOpenLibrary, libraryCount = libraryCount)
     }
 
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {

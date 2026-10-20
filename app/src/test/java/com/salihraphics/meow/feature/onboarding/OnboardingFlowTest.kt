@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onAllNodesWithText
 import com.salihraphics.meow.MainActivity
@@ -59,5 +60,10 @@ class OnboardingFlowTest {
         waitForText(text(R.string.home_greeting_named, "Deniz"))
         rule.onNodeWithText(text(R.string.home_greeting_named, "Deniz")).assertIsDisplayed()
         rule.onNodeWithText(text(R.string.exam_lgs)).assertIsDisplayed()
+
+        // The library is reachable from Home and starts empty (real Room database).
+        rule.onNodeWithText(text(R.string.home_library_title)).performScrollTo().performClick()
+        waitForText(text(R.string.library_empty_title))
+        rule.onNodeWithText(text(R.string.library_add)).assertIsDisplayed()
     }
 }

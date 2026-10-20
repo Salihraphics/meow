@@ -87,8 +87,8 @@ class ScreenshotTest {
     @Test fun readyLight() = step(OnboardingStep.READY, dark = false)
     @Test fun readyDark() = step(OnboardingStep.READY, dark = true)
 
-    @Test fun homeLight() = shoot("home", dark = false) { HomeScreen(answered.toProfile(), onOpenSettings = {}) }
-    @Test fun homeEmptyDark() = shoot("home_empty", dark = true) { HomeScreen(StudyProfile(), onOpenSettings = {}) }
+    @Test fun homeLight() = shoot("home", dark = false) { HomeScreen(answered.toProfile(), onOpenSettings = {}, onOpenLibrary = {}, libraryCount = 3) }
+    @Test fun homeEmptyDark() = shoot("home_empty", dark = true) { HomeScreen(StudyProfile(), onOpenSettings = {}, onOpenLibrary = {}, libraryCount = 0) }
 
     @Test fun settingsLight() = shoot("settings", dark = false) {
         val repo = FakeUserPreferencesRepository(UserPreferences(onboardingCompleted = true, profile = answered.toProfile()))

@@ -64,7 +64,7 @@ class AdaptiveScreenshotTest {
             OnboardingContent(answered.copy(step = step), OnboardingActions())
         }
 
-    private fun home(device: String) = shoot("${device}_home") { HomeScreen(answered.toProfile(), onOpenSettings = {}) }
+    private fun home(device: String) = shoot("${device}_home") { HomeScreen(answered.toProfile(), onOpenSettings = {}, onOpenLibrary = {}, libraryCount = 3) }
 
     private fun settings(device: String) = shoot("${device}_settings") {
         val repo = FakeUserPreferencesRepository(UserPreferences(onboardingCompleted = true, profile = answered.toProfile()))
