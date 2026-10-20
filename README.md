@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./meow-app.svg" alt="MEOW app icon" width="140" />  <h1>MEOW</h1>
+  <img src="./meow-app_20261020_223635_0000.svg" alt="MEOW app icon" width="140" />  <h1>MEOW</h1>
   <p><strong>Study smarter. Learn from every mistake.</strong></p>  <p>A smarter way to study. A little more human, a little less complicated.</p>  <p>
     MEOW is an Android study companion designed to turn PDF question banks into an interactive, organized, and personal study experience.
   </p>  <p>
