@@ -46,6 +46,12 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        // Migration tests (Robolectric) read the schema history from the variant's assets.
+        // Debug only: a few KB of JSON, never shipped in release builds.
+        getByName("debug").assets.srcDir("$projectDir/schemas")
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -92,6 +98,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.room.testing)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.roborazzi)

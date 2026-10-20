@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.salihraphics.meow.testing.FakeAnnotationRepository
 import com.salihraphics.meow.testing.FakePdfLibraryRepository
 import com.salihraphics.meow.testing.FakeSessionFactory
 import com.salihraphics.meow.testing.sampleDocument
@@ -52,7 +53,7 @@ class PdfViewerViewModelTest {
         ViewModelProvider.create(store, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: KClass<T>, extras: CreationExtras): T =
-                PdfViewerViewModel(id, savedState, repo, sessions, scope) as T
+                PdfViewerViewModel(id, savedState, repo, sessions, FakeAnnotationRepository(), scope) as T
         })[PdfViewerViewModel::class]
 
     @Test

@@ -148,7 +148,24 @@
     <string name="viewer_info_pages">%1$d sayfa · %2$s</string>
     <string name="viewer_info_imported">Eklenme: %1$s</string>
     <string name="viewer_next_steps_heading">Sırada</string>
-    <string name="viewer_next_steps_body">Bu PDF üzerinde çizim, cevap işaretleme ve test oluşturma bir sonraki adımda burada olacak.</string>
+    <string name="viewer_next_steps_body">Cevap işaretleme ve bu PDF\'den test oluşturma bir sonraki adımda burada olacak.</string>
+
+    <!-- Annotation -->
+    <string name="annotation_toolbar">Çizim araçları</string>
+    <string name="annotation_tool_navigate">Gezin</string>
+    <string name="annotation_tool_pen">Kalem</string>
+    <string name="annotation_tool_eraser">Silgi</string>
+    <string name="annotation_undo">Geri al</string>
+    <string name="annotation_redo">Yinele</string>
+    <string name="annotation_color_black">Siyah</string>
+    <string name="annotation_color_blue">Mavi</string>
+    <string name="annotation_color_red">Kırmızı</string>
+    <string name="annotation_color_purple">Mor</string>
+    <string name="annotation_color_green">Yeşil</string>
+    <string name="annotation_width_thin">İnce çizgi</string>
+    <string name="annotation_width_medium">Orta çizgi</string>
+    <string name="annotation_width_thick">Kalın çizgi</string>
+    <string name="annotation_two_finger_hint">Kaydırmak ve yakınlaştırmak için iki parmak kullan.</string>
 
     <!-- Home -->
     <string name="home_greeting">Merhaba!</string>

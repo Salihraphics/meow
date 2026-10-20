@@ -3,10 +3,12 @@ package com.salihraphics.meow.feature.viewer
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.salihraphics.meow.data.annotation.AnnotationRepository
 import com.salihraphics.meow.data.library.PdfLibraryRepository
 import com.salihraphics.meow.data.pdf.PdfRenderSession
 import com.salihraphics.meow.data.pdf.PdfRenderSessionFactory
 import com.salihraphics.meow.domain.model.PdfDocument
+import com.salihraphics.meow.feature.annotation.AnnotationSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -24,7 +26,12 @@ enum class ViewerError { MISSING, PASSWORD_PROTECTED, DAMAGED }
 sealed interface ViewerUiState {
     data object Loading : ViewerUiState
     data class Error(val error: ViewerError) : ViewerUiState
-    data class Ready(val document: PdfDocument, val loader: PdfPageLoader, val initialPage: Int) : ViewerUiState
+    data class Ready(
+        val document: PdfDocument,
+        val loader: PdfPageLoader,
+        val initialPage: Int,
+        val annotations: AnnotationSession,
+    ) : ViewerUiState
 }
 
 class PdfViewerViewModel(
@@ -33,6 +40,7 @@ class PdfViewerViewModel(
     private val savedState: SavedStateHandle,
     private val repository: PdfLibraryRepository,
     private val sessions: PdfRenderSessionFactory,
+    annotationRepository: AnnotationRepository,
     /** Outlives this screen, so the final reading position is saved after it closes. */
     private val applicationScope: CoroutineScope,
 ) : ViewModel() {
@@ -41,6 +49,9 @@ class PdfViewerViewModel(
     val state: StateFlow<ViewerUiState> = _state.asStateFlow()
 
     private var session: PdfRenderSession? = null
+
+    /** Strokes, tool and undo history; here so rotation keeps them. */
+    private val annotations = AnnotationSession(documentId, annotationRepository, viewModelScope)
     private var currentPage: Int? = null
     private var saveJob: Job? = null
     /** A page change not yet written to the library. */
@@ -95,7 +106,7 @@ class PdfViewerViewModel(
         viewport = restored ?: ViewportSnapshot(pageIndex = start)
         currentPage = start
         repository.recordReading(documentId, start)
-        _state.value = ViewerUiState.Ready(document, SessionPageLoader(opened), start)
+        _state.value = ViewerUiState.Ready(document, SessionPageLoader(opened), start, annotations)
     }
 
     /** Where to put the reader when the screen is (re)created, e.g. after rotation. */

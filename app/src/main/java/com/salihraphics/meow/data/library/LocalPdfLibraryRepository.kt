@@ -1,6 +1,7 @@
 package com.salihraphics.meow.data.library
 
 import android.net.Uri
+import com.salihraphics.meow.data.annotation.StrokeDao
 import com.salihraphics.meow.data.library.db.PdfDocumentDao
 import com.salihraphics.meow.data.library.db.PdfDocumentEntity
 import com.salihraphics.meow.data.pdf.PdfInspector
@@ -28,6 +29,8 @@ class LocalPdfLibraryRepository(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
+    /** Annotations of a removed document go with it. */
+    private val strokes: StrokeDao? = null,
 ) : PdfLibraryRepository {
 
     override val documents: Flow<List<PdfDocument>> = dao.observeAll().map { rows -> rows.map { it.toDomain() } }
@@ -99,7 +102,9 @@ class LocalPdfLibraryRepository(
     }
 
     override suspend fun remove(id: String) {
-        dao.markDeleted(id, now())
+        val time = now()
+        dao.markDeleted(id, time)
+        strokes?.markDocumentDeleted(id, time)
         withContext(io) { files.delete(id) }
     }
 

@@ -97,6 +97,7 @@ fun MeowNavHost(
                             savedState = createSavedStateHandle(),
                             repository = container.pdfLibraryRepository,
                             sessions = container.pdfRenderSessionFactory,
+                            annotationRepository = container.annotationRepository,
                             applicationScope = container.applicationScope,
                         )
                     }

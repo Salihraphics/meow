@@ -3,6 +3,8 @@ package com.salihraphics.meow
 import android.content.Context
 import com.salihraphics.meow.data.account.AccountRepository
 import com.salihraphics.meow.data.account.LocalOnlyAccountRepository
+import com.salihraphics.meow.data.annotation.AnnotationRepository
+import com.salihraphics.meow.data.annotation.LocalAnnotationRepository
 import com.salihraphics.meow.data.library.ContentResolverDocumentSource
 import com.salihraphics.meow.data.library.LocalPdfLibraryRepository
 import com.salihraphics.meow.data.library.PdfFileStore
@@ -39,7 +41,12 @@ class AppContainer(context: Context) {
             files = pdfFiles,
             source = ContentResolverDocumentSource(context.contentResolver),
             inspector = AndroidPdfInspector(),
+            strokes = database.strokes(),
         )
+    }
+
+    val annotationRepository: AnnotationRepository by lazy {
+        LocalAnnotationRepository(database.strokes(), applicationScope)
     }
 
     val pdfRenderSessionFactory: PdfRenderSessionFactory = AndroidPdfRenderSession.Factory

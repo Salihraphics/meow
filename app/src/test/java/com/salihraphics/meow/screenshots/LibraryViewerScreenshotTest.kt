@@ -25,6 +25,13 @@ import com.salihraphics.meow.feature.viewer.ViewerError
 import com.salihraphics.meow.feature.viewer.ViewerUiState
 import com.salihraphics.meow.feature.viewer.ViewportSnapshot
 import com.salihraphics.meow.testing.sampleDocument
+import com.salihraphics.meow.feature.annotation.AnnotationSession
+import com.salihraphics.meow.feature.annotation.AnnotationTool
+import com.salihraphics.meow.domain.model.Stroke
+import com.salihraphics.meow.domain.model.StrokeTool
+import com.salihraphics.meow.testing.FakeAnnotationRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -71,7 +78,7 @@ class LibraryViewerScreenshotTest {
     private fun viewer(name: String, state: ViewerUiState, dark: Boolean = false) =
         shoot(name, dark) { PdfViewerContent(state, initialViewport = { ViewportSnapshot(0) }, onViewportChanged = {}, onPageChanged = {}, onBack = {}) }
 
-    private val ready = ViewerUiState.Ready(docs[0], SyntheticLoader(312), initialPage = 0)
+    private val ready = ViewerUiState.Ready(docs[0], SyntheticLoader(312), initialPage = 0, annotations = AnnotationSession("doc-1", FakeAnnotationRepository(), CoroutineScope(Dispatchers.Unconfined)))
 
     @Test @Config(qualifiers = PHONE) fun libraryEmpty() = library("phone_library_empty", emptyList())
     @Test @Config(qualifiers = PHONE) fun libraryList() = library("phone_library", docs)
@@ -85,6 +92,22 @@ class LibraryViewerScreenshotTest {
     @Test @Config(qualifiers = PHONE) fun viewerError() = viewer("phone_viewer_error", ViewerUiState.Error(ViewerError.DAMAGED))
     @Test @Config(qualifiers = PHONE) fun viewerLoading() = viewer("phone_viewer_loading", ViewerUiState.Loading)
     @Test @Config(qualifiers = TABLET_LANDSCAPE) fun viewerTablet() = viewer("tablet_viewer", ready)
+
+    private fun annotated(tool: AnnotationTool?): ViewerUiState.Ready {
+        val repo = FakeAnnotationRepository().apply {
+            add(Stroke("a", "1", 0, StrokeTool.PEN, 0xFFE0383E.toInt(), 0.006f, floatArrayOf(0.15f, 0.32f, 0.3f, 0.3f, 0.45f, 0.33f, 0.6f, 0.31f)))
+            add(Stroke("b", "1", 0, StrokeTool.PEN, 0xFF1E5EFF.toInt(), 0.004f, floatArrayOf(0.7f, 0.2f, 0.78f, 0.16f, 0.86f, 0.2f, 0.78f, 0.26f, 0.7f, 0.2f)))
+        }
+        val session = AnnotationSession("1", repo, CoroutineScope(Dispatchers.Unconfined)).apply {
+            selectTool(tool)
+            selectColor(2)
+        }
+        return ready.copy(annotations = session)
+    }
+
+    @Test @Config(qualifiers = PHONE) fun viewerPen() = viewer("phone_viewer_pen", annotated(AnnotationTool.PEN))
+    @Test @Config(qualifiers = PHONE) fun viewerReadingDark() = viewer("phone_viewer_annotated_dark", annotated(null), dark = true)
+    @Test @Config(qualifiers = TABLET_LANDSCAPE) fun viewerTabletEraser() = viewer("tablet_viewer_eraser", annotated(AnnotationTool.ERASER))
 }
 
 private class SyntheticLoader(override val pageCount: Int) : PdfPageLoader {

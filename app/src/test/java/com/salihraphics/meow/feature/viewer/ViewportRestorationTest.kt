@@ -30,6 +30,10 @@ import com.salihraphics.meow.testing.sampleDocument
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import com.salihraphics.meow.feature.annotation.AnnotationSession
+import com.salihraphics.meow.testing.FakeAnnotationRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,7 +62,7 @@ class ViewportRestorationTest {
     private var saved: ViewportSnapshot = ViewportSnapshot(pageIndex = 0)
     private var screen by mutableStateOf(phonePortrait)
     private var generation by mutableStateOf(0)
-    private val ready = ViewerUiState.Ready(sampleDocument(pages = 40), StubLoader(40), initialPage = 0)
+    private val ready = ViewerUiState.Ready(sampleDocument(pages = 40), StubLoader(40), initialPage = 0, annotations = AnnotationSession("doc-1", FakeAnnotationRepository(), CoroutineScope(Dispatchers.Unconfined)))
 
     private fun start() {
         rule.setContent {

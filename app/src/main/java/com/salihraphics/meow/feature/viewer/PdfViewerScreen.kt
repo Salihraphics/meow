@@ -1,7 +1,12 @@
 package com.salihraphics.meow.feature.viewer
 
 import android.text.format.Formatter
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.runtime.remember
+import com.salihraphics.meow.feature.annotation.AnnotationToolbar
+import com.salihraphics.meow.feature.annotation.PageAnnotationLayer
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -134,6 +139,32 @@ private fun ReadyViewer(
     val window = LocalMeowWindow.current
     val sidePanel = window.useTwoPanes || window.width == WidthClass.Expanded
     val pageCount = state.loader.pageCount
+    val tools by state.annotations.tools.collectAsStateWithLifecycle()
+    val drawing = tools.tool != null
+
+    val pages = @Composable { modifier: Modifier ->
+        PdfPagesView(
+            loader = state.loader,
+            state = viewport,
+            modifier = modifier.pdfBackdrop(),
+            drawingActive = drawing,
+            pageOverlay = { page -> PageAnnotationLayer(page, state.annotations, tools) },
+        )
+    }
+    val toolbar = @Composable {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            TwoFingerHint(visible = drawing)
+            AnnotationToolbar(
+                state = tools,
+                onTool = state.annotations::selectTool,
+                onColor = state.annotations::selectColor,
+                onWidth = state.annotations::selectWidth,
+                // An undo on a page that's off screen scrolls there, so the change is never invisible.
+                onUndo = { state.annotations.undo()?.let { page -> scope.launch { reveal(viewport, page) } } },
+                onRedo = { state.annotations.redo()?.let { page -> scope.launch { reveal(viewport, page) } } },
+            )
+        }
+    }
 
     ViewerTopBar(
         title = state.document.displayName,
@@ -144,7 +175,10 @@ private fun ReadyViewer(
     )
     if (sidePanel) {
         Row(Modifier.fillMaxSize()) {
-            PdfPagesView(state.loader, viewport, Modifier.weight(1f).fillMaxHeight().pdfBackdrop())
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                pages(Modifier.fillMaxSize())
+                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)) { toolbar() }
+            }
             SidePanel(
                 document = state.document,
                 viewport = viewport,
@@ -155,19 +189,25 @@ private fun ReadyViewer(
         }
     } else {
         Box(Modifier.fillMaxSize()) {
-            PdfPagesView(state.loader, viewport, Modifier.fillMaxSize().pdfBackdrop())
-            Surface(
-                onClick = { askingPage = true },
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
-                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+            pages(Modifier.fillMaxSize())
+            Column(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    stringResource(R.string.viewer_page_indicator, viewport.currentPage + 1, pageCount),
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                )
+                Surface(
+                    onClick = { askingPage = true },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                ) {
+                    Text(
+                        stringResource(R.string.viewer_page_indicator, viewport.currentPage + 1, pageCount),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                toolbar()
             }
         }
     }
@@ -181,6 +221,37 @@ private fun ReadyViewer(
                 scope.launch { viewport.goToPage(page - 1) }
             },
         )
+    }
+}
+
+private suspend fun reveal(viewport: PdfViewportState, page: Int) {
+    if (!viewport.isPageVisible(page)) viewport.goToPage(page)
+}
+
+/** One finger draws while a tool is active, so say how to move around; shown briefly. */
+@Composable
+private fun TwoFingerHint(visible: Boolean) {
+    var show by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        show = visible
+        if (visible) {
+            delay(3_500)
+            show = false
+        }
+    }
+    AnimatedVisibility(show) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            modifier = Modifier.padding(bottom = 8.dp),
+        ) {
+            Text(
+                stringResource(R.string.annotation_two_finger_hint),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
     }
 }
 

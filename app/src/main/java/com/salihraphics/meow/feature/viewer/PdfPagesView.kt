@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -168,6 +169,8 @@ class PdfViewportState(initial: ViewportSnapshot) {
         horizontal.scrollTo(horizontalTarget.coerceIn(0, horizontal.maxValue))
     }
 
+    fun isPageVisible(index: Int): Boolean = list.layoutInfo.visibleItemsInfo.any { it.index == index }
+
     suspend fun zoomIn() = zoomTo(zoom * ZOOM_STEP)
 
     suspend fun zoomOut() = zoomTo(zoom / ZOOM_STEP)
@@ -233,16 +236,22 @@ fun PdfPagesView(
     modifier: Modifier = Modifier,
     /** At 100% pages fit the width, up to this; wide tablets would otherwise show one giant page. */
     maxPageWidth: Dp = 760.dp,
+    /**
+     * While true, one finger belongs to [pageOverlay] (drawing), and two fingers pan as well as
+     * zoom. While false, everything behaves as a plain reader.
+     */
+    drawingActive: Boolean = false,
     pageOverlay: @Composable BoxScope.(pageIndex: Int) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    val drawing by rememberUpdatedState(drawingActive)
     val density = LocalDensity.current
     BoxWithConstraints(
         modifier
             .clipToBounds()
             .onSizeChanged { state.viewportSize = it }
             .pointerInput(state) {
-                // Two fingers zoom; one finger is left to the list for scrolling.
+                // Two fingers zoom (and pan while drawing); one finger is left to the list or the pen.
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     var scale = 1f
@@ -253,6 +262,11 @@ fun PdfPagesView(
                             pinching = true
                             scale *= event.calculateZoom()
                             state.previewPinch(scale, event.calculateCentroid(useCurrent = true))
+                            if (drawing) {
+                                val pan = event.calculatePan()
+                                state.list.dispatchRawDelta(-pan.y)
+                                state.horizontal.dispatchRawDelta(-pan.x)
+                            }
                             event.changes.forEach { it.consume() }
                         } else if (pinching) {
                             event.changes.forEach { it.consume() }
@@ -263,7 +277,8 @@ fun PdfPagesView(
             }
             .pointerInput(state) {
                 detectTapGestures(onDoubleTap = { at ->
-                    scope.launch { state.zoomTo(if (state.zoom > 1.2f) 1f else 2f, at) }
+                    // While drawing, two quick taps are two dots, not a zoom.
+                    if (!drawing) scope.launch { state.zoomTo(if (state.zoom > 1.2f) 1f else 2f, at) }
                 })
             },
     ) {
@@ -274,9 +289,10 @@ fun PdfPagesView(
         val contentWidthPx = baseWidthPx * state.zoom
         val pageWidthPx = contentWidthPx - marginPx * 2
         val renderWidth = renderWidthFor(pageWidthPx)
-        Box(Modifier.fillMaxSize().horizontalScroll(state.horizontal, enabled = state.zoom > 1f)) {
+        Box(Modifier.fillMaxSize().horizontalScroll(state.horizontal, enabled = state.zoom > 1f && !drawingActive)) {
             LazyColumn(
                 state = state.list,
+                userScrollEnabled = !drawingActive,
                 contentPadding = PaddingValues(horizontal = margin, vertical = margin),
                 verticalArrangement = Arrangement.spacedBy(margin),
                 horizontalAlignment = Alignment.CenterHorizontally,

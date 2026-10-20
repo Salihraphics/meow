@@ -75,11 +75,12 @@ What works today:
 - The MEOW cat, drawn in code with nine moods and a reaction model ready for future study events. Ambient animation respects the in-app toggle and the system "remove animations" setting.
 - PDF library: import PDFs with the system file picker (no storage permission), with checks for non-PDF, empty, password-protected and damaged files, and duplicate detection. Rename and remove; MEOW keeps its own copy, so removing never touches the original file.
 - PDF viewer: real page rendering, vertical scrolling, pinch / double-tap / button zoom, page indicator, go-to-page, and resuming at the last-read page. On wide screens a side panel shows document info and navigation.
+- PDF annotation: draw on pages with a finger or stylus (pen in five colours and three widths, whole-stroke eraser, undo/redo). Strokes are stored per page in page-relative coordinates, so they stay aligned through zoom and rotation, and are saved separately from the PDF, which is never modified.
 - Phone and tablet layouts from one codebase: two-pane onboarding on tablets and phones in landscape, two-column home and settings on wider screens, portrait and landscape.
 
 No account is needed. Google sign-in is planned but not implemented; Settings says so rather than showing a button that does nothing. See [docs/ACCOUNTS_AND_SYNC.md](docs/ACCOUNTS_AND_SYNC.md).
 
-Annotation, question solving, answer checking, the mistake notebook and statistics are not implemented yet; the app labels them "Yakında". See [docs/PDF_STUDY.md](docs/PDF_STUDY.md).
+Question solving, answer checking, the mistake notebook and statistics are not implemented yet; the app labels them "Yakında". See [docs/PDF_STUDY.md](docs/PDF_STUDY.md).
 
 🛠️ Building
 
