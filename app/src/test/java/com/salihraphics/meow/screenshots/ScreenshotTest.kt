@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.salihraphics.meow.core.designsystem.theme.MeowTheme
+import com.salihraphics.meow.data.account.LocalOnlyAccountRepository
 import com.salihraphics.meow.core.mascot.MascotMood
 import com.salihraphics.meow.core.mascot.MeowCat
 import com.salihraphics.meow.domain.model.ExamType
@@ -91,7 +92,7 @@ class ScreenshotTest {
 
     @Test fun settingsLight() = shoot("settings", dark = false) {
         val repo = FakeUserPreferencesRepository(UserPreferences(onboardingCompleted = true, profile = answered.toProfile()))
-        SettingsRoute(SettingsViewModel(repo), onBack = {}, onRestartOnboarding = {})
+        SettingsRoute(SettingsViewModel(repo, LocalOnlyAccountRepository()), onBack = {}, onRestartOnboarding = {})
     }
 
     @Test fun moodsLight() = moods(dark = false)

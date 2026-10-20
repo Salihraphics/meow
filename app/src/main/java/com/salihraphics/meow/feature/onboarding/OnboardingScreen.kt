@@ -13,20 +13,15 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.salihraphics.meow.domain.model.ExamType
 import com.salihraphics.meow.domain.model.SessionLength
@@ -97,7 +92,7 @@ fun OnboardingContent(state: OnboardingUiState, actions: OnboardingActions, modi
         if (step == OnboardingStep.WELCOME) {
             WelcomeStep(onContinue = actions.onNext)
         } else {
-            CenteredColumn {
+            Box(Modifier.fillMaxSize()) {
                 when (step) {
                     OnboardingStep.WELCOME, OnboardingStep.MEET -> MeetStep(onContinue = actions.onNext)
                     OnboardingStep.EXAM -> InsetsBox { ExamStep(state.exam, actions.onSelectExam, nav) }
@@ -111,14 +106,6 @@ fun OnboardingContent(state: OnboardingUiState, actions: OnboardingActions, modi
                 }
             }
         }
-    }
-}
-
-/** Keeps content readable on tablets and in landscape. */
-@Composable
-private fun CenteredColumn(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Box(Modifier.widthIn(max = 560.dp).fillMaxWidth().fillMaxHeight()) { content() }
     }
 }
 

@@ -45,7 +45,12 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.shape.CircleShape
 import com.salihraphics.meow.BuildConfig
+import com.salihraphics.meow.core.designsystem.adaptive.LocalMeowWindow
+import com.salihraphics.meow.core.designsystem.adaptive.MeowWidths
+import com.salihraphics.meow.core.designsystem.adaptive.WidthClass
+import com.salihraphics.meow.domain.model.AccountState
 import com.salihraphics.meow.R
 import com.salihraphics.meow.core.designsystem.component.SelectionIndicator
 import com.salihraphics.meow.core.designsystem.component.SelectionKind
@@ -70,10 +75,71 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
     val profile = current.profile
     val notSet = stringResource(R.string.settings_not_set)
 
+    val account by viewModel.account.collectAsStateWithLifecycle()
+    val twoColumns = LocalMeowWindow.current.width == WidthClass.Expanded
+
+    // Sections are defined once and arranged in one column (phones, portrait tablets) or two.
+    val primarySections = @Composable {
+                Section(stringResource(R.string.settings_section_profile)) {
+                    ValueRow(stringResource(R.string.settings_name), profile.displayName ?: notSet) { editor = Editor.NAME }
+                    ValueRow(stringResource(R.string.settings_exam), profile.exam?.let { stringResource(it.labelRes) } ?: notSet) {
+                        editor = Editor.EXAM
+                    }
+                    val subjects = profile.subjects.map { stringResource(it.labelRes) }
+                    ValueRow(stringResource(R.string.settings_subjects), subjects.joinToString().ifEmpty { notSet }) {
+                        editor = Editor.SUBJECTS
+                    }
+                    ValueRow(stringResource(R.string.settings_level), profile.level?.let { stringResource(it.labelRes) } ?: notSet) {
+                        editor = Editor.LEVEL
+                    }
+                    ValueRow(
+                        stringResource(R.string.settings_session),
+                        profile.sessionLength?.let { stringResource(R.string.session_minutes, it.minutes) } ?: notSet,
+                    ) { editor = Editor.SESSION }
+                }
+                Section(stringResource(R.string.settings_section_companion)) {
+                    SwitchRow(
+                        title = stringResource(R.string.settings_animations),
+                        description = stringResource(R.string.settings_animations_desc),
+                        checked = current.mascotAnimationsEnabled,
+                        onCheckedChange = viewModel::setMascotAnimations,
+                    )
+                }
+    }
+    val secondarySections = @Composable {
+                Section(stringResource(R.string.settings_section_appearance)) {
+                    Text(
+                        stringResource(R.string.settings_theme),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    )
+                    ThemeChoice(current.themeMode, viewModel::setThemeMode)
+                }
+            Section(stringResource(R.string.settings_section_account)) {
+                AccountSection(account, signInAvailable = viewModel.isSignInAvailable)
+            }
+                Section(stringResource(R.string.settings_section_data)) {
+                    ActionRow(
+                        stringResource(R.string.settings_restart_onboarding),
+                        stringResource(R.string.settings_restart_onboarding_desc),
+                    ) { viewModel.restartOnboarding(onRestartOnboarding) }
+                    ActionRow(
+                        stringResource(R.string.settings_reset_all),
+                        stringResource(R.string.settings_reset_all_desc),
+                    ) { editor = Editor.RESET }
+                    Text(
+                        stringResource(R.string.settings_privacy_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                    )
+                }
+    }
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
-                .widthIn(max = 640.dp)
+                .widthIn(max = if (twoColumns) MeowWidths.Wide else 640.dp)
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .verticalScroll(rememberScrollState()),
@@ -88,58 +154,14 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
                     modifier = Modifier.semantics { heading() },
                 )
             }
-
-            Section(stringResource(R.string.settings_section_profile)) {
-                ValueRow(stringResource(R.string.settings_name), profile.displayName ?: notSet) { editor = Editor.NAME }
-                ValueRow(stringResource(R.string.settings_exam), profile.exam?.let { stringResource(it.labelRes) } ?: notSet) {
-                    editor = Editor.EXAM
+            if (twoColumns) {
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column(Modifier.weight(1f)) { primarySections() }
+                    Column(Modifier.weight(1f)) { secondarySections() }
                 }
-                val subjects = profile.subjects.map { stringResource(it.labelRes) }
-                ValueRow(stringResource(R.string.settings_subjects), subjects.joinToString().ifEmpty { notSet }) {
-                    editor = Editor.SUBJECTS
-                }
-                ValueRow(stringResource(R.string.settings_level), profile.level?.let { stringResource(it.labelRes) } ?: notSet) {
-                    editor = Editor.LEVEL
-                }
-                ValueRow(
-                    stringResource(R.string.settings_session),
-                    profile.sessionLength?.let { stringResource(R.string.session_minutes, it.minutes) } ?: notSet,
-                ) { editor = Editor.SESSION }
-            }
-
-            Section(stringResource(R.string.settings_section_companion)) {
-                SwitchRow(
-                    title = stringResource(R.string.settings_animations),
-                    description = stringResource(R.string.settings_animations_desc),
-                    checked = current.mascotAnimationsEnabled,
-                    onCheckedChange = viewModel::setMascotAnimations,
-                )
-            }
-
-            Section(stringResource(R.string.settings_section_appearance)) {
-                Text(
-                    stringResource(R.string.settings_theme),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
-                ThemeChoice(current.themeMode, viewModel::setThemeMode)
-            }
-
-            Section(stringResource(R.string.settings_section_data)) {
-                ActionRow(
-                    stringResource(R.string.settings_restart_onboarding),
-                    stringResource(R.string.settings_restart_onboarding_desc),
-                ) { viewModel.restartOnboarding(onRestartOnboarding) }
-                ActionRow(
-                    stringResource(R.string.settings_reset_all),
-                    stringResource(R.string.settings_reset_all_desc),
-                ) { editor = Editor.RESET }
-                Text(
-                    stringResource(R.string.settings_privacy_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                )
+            } else {
+                primarySections()
+                secondarySections()
             }
 
             Text(
@@ -219,17 +241,59 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ValueRow(title: String, value: String, onClick: () -> Unit) {
+private fun ValueRow(title: String, value: String, onClick: (() -> Unit)?) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier.semantics(mergeDescendants = true) {})
             .heightIn(min = 56.dp)
             .padding(horizontal = 24.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
         Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Account entry point. Until real Google sign-in exists, this explains the plan instead of showing
+ * a button that does nothing.
+ */
+@Composable
+private fun AccountSection(account: AccountState, signInAvailable: Boolean) {
+    when (account) {
+        is AccountState.SignedIn -> ValueRow(
+            title = stringResource(R.string.settings_account_signed_in),
+            value = account.email ?: account.displayName.orEmpty(),
+            onClick = null,
+        )
+        AccountState.SignedOut -> Row(
+            Modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {}
+                .padding(horizontal = 24.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.settings_google_sign_in), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(R.string.settings_google_sign_in_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!signInAvailable) {
+                Spacer(Modifier.width(12.dp))
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                    Text(
+                        stringResource(R.string.badge_soon),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

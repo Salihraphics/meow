@@ -26,6 +26,7 @@
     <!-- Exam -->
     <string name="exam_title">Hangi sınava hazırlanıyorsun?</string>
     <string name="exam_subtitle">Sana daha uygun bir deneyim sunabilmem için bilmem iyi olur.</string>
+    <string name="exam_bubble">Hangisi olursa olsun, senin hızında ilerleriz.</string>
     <string name="exam_yks">YKS</string>
     <string name="exam_yks_desc">TYT, AYT ve YDT</string>
     <string name="exam_lgs">LGS</string>
@@ -38,6 +39,7 @@
     <!-- Subjects -->
     <string name="subjects_title">Hangi derslere odaklanacaksın?</string>
     <string name="subjects_subtitle">İlgilendiğin dersleri seç. Hepsini seçmen gerekmiyor.</string>
+    <string name="subjects_bubble">Yeni dersleri sonra da ekleyebilirsin.</string>
     <string name="subjects_selected_count">%1$d ders seçildi</string>
     <string name="subject_math">Matematik</string>
     <string name="subject_geometry">Geometri</string>
@@ -112,7 +114,11 @@
     <string name="settings_section_profile">Çalışma profili</string>
     <string name="settings_section_companion">MEOW</string>
     <string name="settings_section_appearance">Görünüm</string>
+    <string name="settings_section_account">Hesap</string>
     <string name="settings_section_data">Veriler</string>
+    <string name="settings_google_sign_in">Google ile giriş yap</string>
+    <string name="settings_google_sign_in_desc">MEOW hesapsız da eksiksiz çalışır. Giriş geldiğinde isteğe bağlı olacak ve verilerini kendiliğinden hiçbir yere yüklemeyecek.</string>
+    <string name="settings_account_signed_in">Giriş yapıldı</string>
     <string name="settings_name">İsim</string>
     <string name="settings_exam">Sınav</string>
     <string name="settings_subjects">Dersler</string>

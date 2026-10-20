@@ -34,7 +34,8 @@ fun MeowNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
 ) {
-    val repository = (LocalContext.current.applicationContext as MeowApplication).container.userPreferencesRepository
+    val container = (LocalContext.current.applicationContext as MeowApplication).container
+    val repository = container.userPreferencesRepository
 
     NavHost(
         navController = navController,
@@ -56,7 +57,7 @@ fun MeowNavHost(
             )
         }
         composable(MeowDestinations.SETTINGS) {
-            val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(repository) } })
+            val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(repository, container.accountRepository) } })
             SettingsRoute(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },

@@ -33,6 +33,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.salihraphics.meow.R
+import com.salihraphics.meow.core.designsystem.adaptive.LocalMeowWindow
+import com.salihraphics.meow.core.designsystem.adaptive.MeowWidths
 import com.salihraphics.meow.core.designsystem.component.MeowTextButton
 import com.salihraphics.meow.core.mascot.CompanionCat
 import com.salihraphics.meow.core.mascot.MascotState
@@ -48,14 +50,44 @@ import com.salihraphics.meow.feature.common.StudyFeatureList
 @Composable
 fun HomeScreen(profile: StudyProfile, onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
     val cat = rememberMascotState(MascotState())
+    val twoColumns = LocalMeowWindow.current.useTwoColumns
+
+    val companionAndProfile = @Composable {
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            CompanionCat(
+                holder = cat,
+                defaultSpeech = stringResource(R.string.home_subtitle),
+                modifier = Modifier.padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                catSize = if (twoColumns) 156.dp else 132.dp,
+            )
+        }
+        Spacer(Modifier.height(28.dp))
+        SectionTitle(stringResource(R.string.home_profile_heading))
+        ProfileSummary(profile, onEdit = onOpenSettings)
+    }
+    val workspace = @Composable {
+        SectionTitle(stringResource(R.string.home_workspace_heading))
+        Text(
+            stringResource(R.string.home_workspace_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        StudyFeatureList()
+    }
+
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
-                .widthIn(max = 640.dp)
+                .widthIn(max = if (twoColumns) MeowWidths.Wide else 640.dp)
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = if (twoColumns) 32.dp else 24.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -70,32 +102,16 @@ fun HomeScreen(profile: StudyProfile, onOpenSettings: () -> Unit, modifier: Modi
                 }
             }
             Spacer(Modifier.height(20.dp))
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                CompanionCat(
-                    holder = cat,
-                    defaultSpeech = stringResource(R.string.home_subtitle),
-                    modifier = Modifier.padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-                    catSize = 132.dp,
-                )
+            if (twoColumns) {
+                Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+                    Column(Modifier.weight(1f)) { companionAndProfile() }
+                    Column(Modifier.weight(1f)) { workspace() }
+                }
+            } else {
+                companionAndProfile()
+                Spacer(Modifier.height(28.dp))
+                workspace()
             }
-
-            Spacer(Modifier.height(28.dp))
-            SectionTitle(stringResource(R.string.home_profile_heading))
-            ProfileSummary(profile, onEdit = onOpenSettings)
-
-            Spacer(Modifier.height(28.dp))
-            SectionTitle(stringResource(R.string.home_workspace_heading))
-            Text(
-                stringResource(R.string.home_workspace_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(12.dp))
-            StudyFeatureList()
             Spacer(Modifier.height(24.dp))
         }
     }

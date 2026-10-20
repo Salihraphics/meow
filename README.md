@@ -73,6 +73,9 @@ What works today:
 - Preferences saved on-device; onboarding is shown once, and can be revisited or reset from Settings.
 - Home screen with the student's profile, and Settings for profile, theme (system / light / dark) and cat animations.
 - The MEOW cat, drawn in code with nine moods and a reaction model ready for future study events. Ambient animation respects the in-app toggle and the system "remove animations" setting.
+- Phone and tablet layouts from one codebase: two-pane onboarding on tablets and phones in landscape, two-column home and settings on wider screens, portrait and landscape.
+
+No account is needed. Google sign-in is planned but not implemented; Settings says so rather than showing a button that does nothing. See [docs/ACCOUNTS_AND_SYNC.md](docs/ACCOUNTS_AND_SYNC.md).
 
 PDF import, solving, answer checking, the mistake notebook and statistics are not implemented yet; the app labels them "Yakında".
 

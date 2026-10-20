@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import com.salihraphics.meow.core.designsystem.adaptive.LocalMeowWindow
+import com.salihraphics.meow.core.designsystem.adaptive.rememberMeowWindow
 
 @Immutable
 data class MeowMotion(
@@ -52,6 +54,7 @@ fun MeowTheme(
     CompositionLocalProvider(
         LocalMeowMotion provides motion,
         LocalIsDarkTheme provides darkTheme,
+        LocalMeowWindow provides rememberMeowWindow(),
     ) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkColors else LightColors,

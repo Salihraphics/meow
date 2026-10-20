@@ -2,7 +2,9 @@ package com.salihraphics.meow.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.salihraphics.meow.data.account.AccountRepository
 import com.salihraphics.meow.data.preferences.UserPreferencesRepository
+import com.salihraphics.meow.domain.model.AccountState
 import com.salihraphics.meow.domain.model.ExamType
 import com.salihraphics.meow.domain.model.SessionLength
 import com.salihraphics.meow.domain.model.StudyLevel
@@ -16,7 +18,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(private val repository: UserPreferencesRepository) : ViewModel() {
+class SettingsViewModel(
+    private val repository: UserPreferencesRepository,
+    accountRepository: AccountRepository,
+) : ViewModel() {
+
+    val account: StateFlow<AccountState> = accountRepository.account
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AccountState.SignedOut)
+
+    val isSignInAvailable: Boolean = accountRepository.isSignInAvailable
 
     /** Null until the first read completes. */
     val preferences: StateFlow<UserPreferences?> = repository.preferences
