@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MEOW</string>
+
+    <!-- Common -->
+    <string name="action_continue">Devam et</string>
+    <string name="action_skip">Atla</string>
+    <string name="action_back">Geri</string>
+    <string name="action_save">Kaydet</string>
+    <string name="action_clear">Temizle</string>
+    <string name="action_cancel">Vazgeç</string>
+    <string name="badge_soon">Yakında</string>
+    <string name="step_counter">%1$d/%2$d</string>
+    <string name="cd_step_progress">Adım %1$d / %2$d</string>
+
+    <!-- Welcome / splash -->
+    <string name="welcome_tagline">Daha akıllıca çalış.\nHer hatadan öğren.</string>
+    <string name="cd_peeking_cat">Kenardan merakla bakan siyah kedi MEOW</string>
+
+    <!-- Meet MEOW -->
+    <string name="meet_title">Merhaba,\nben MEOW!</string>
+    <string name="meet_body">Sen çalışırken yanında olan küçük bir dostum. Hadi, çalışma alanını birlikte hazırlayalım.</string>
+    <string name="meet_privacy">Hesap açman gerekmiyor. Cevapların sadece bu cihazda saklanıyor.</string>
+    <string name="meet_cta">Hadi başlayalım</string>
+
+    <!-- Exam -->
+    <string name="exam_title">Hangi sınava hazırlanıyorsun?</string>
+    <string name="exam_subtitle">Sana daha uygun bir deneyim sunabilmem için bilmem iyi olur.</string>
+    <string name="exam_bubble">Hangisi olursa olsun, senin hızında ilerleriz.</string>
+    <string name="exam_yks">YKS</string>
+    <string name="exam_yks_desc">TYT, AYT ve YDT</string>
+    <string name="exam_lgs">LGS</string>
+    <string name="exam_lgs_desc">Liselere geçiş sınavı</string>
+    <string name="exam_school">Okul sınavları</string>
+    <string name="exam_school_desc">Yazılılar ve ara sınavlar</string>
+    <string name="exam_other">Diğer</string>
+    <string name="exam_other_desc">KPSS, ALES, dil sınavları ya da kendi hedefin</string>
+
+    <!-- Subjects -->
+    <string name="subjects_title">Hangi derslere odaklanacaksın?</string>
+    <string name="subjects_subtitle">İlgilendiğin dersleri seç. Hepsini seçmen gerekmiyor.</string>
+    <string name="subjects_bubble">Yeni dersleri sonra da ekleyebilirsin.</string>
+    <string name="subjects_selected_count">%1$d ders seçildi</string>
+    <string name="subject_math">Matematik</string>
+    <string name="subject_geometry">Geometri</string>
+    <string name="subject_physics">Fizik</string>
+    <string name="subject_chemistry">Kimya</string>
+    <string name="subject_biology">Biyoloji</string>
+    <string name="subject_science">Fen Bilimleri</string>
+    <string name="subject_turkish">Türkçe</string>
+    <string name="subject_literature">Türk Dili ve Edebiyatı</string>
+    <string name="subject_history">Tarih</string>
+    <string name="subject_revolution_history">T.C. İnkılap Tarihi</string>
+    <string name="subject_geography">Coğrafya</string>
+    <string name="subject_philosophy">Felsefe</string>
+    <string name="subject_religion">Din Kültürü</string>
+    <string name="subject_english">İngilizce</string>
+
+    <!-- Level -->
+    <string name="level_title">Şu an kendini hangi seviyede hissediyorsun?</string>
+    <string name="level_subtitle">Bu bir not değil. Sadece sana uygun öneriler sunmama yardım ediyor.</string>
+    <string name="level_beginner">Yeni başlıyorum</string>
+    <string name="level_foundation">Temelim var</string>
+    <string name="level_mixed">Bazı konularda iyiyim, bazılarında zorlanıyorum</string>
+    <string name="level_review">Tekrar yapıp eksiklerimi kapatmak istiyorum</string>
+    <string name="level_bubble">Nereden başlarsan başla, beraber ilerleyeceğiz. 💜</string>
+
+    <!-- Session length -->
+    <string name="session_title">Bir oturumda ne kadar çalışmak sana iyi gelir?</string>
+    <string name="session_subtitle">Daha uzun, daha iyi demek değil. Sana uyan süre en doğrusu.</string>
+    <string name="session_minutes">%1$d dakika</string>
+    <string name="session_15_desc">Kısa ve odaklı</string>
+    <string name="session_30_desc">Rahat bir tempo</string>
+    <string name="session_45_desc">Bir ders saati kadar</string>
+    <string name="session_60_desc">Derinlemesine</string>
+    <string name="session_bubble">Küçük adımlar da sayılır.</string>
+
+    <!-- Name -->
+    <string name="name_title">Sana nasıl hitap edeyim?</string>
+    <string name="name_subtitle">İstersen bir isim ya da takma ad yaz. Boş da bırakabilirsin.</string>
+    <string name="name_label">İsim ya da takma ad</string>
+    <string name="name_bubble_empty">Sana nasıl seslenmemi istersin?</string>
+    <string name="name_bubble_filled">Memnun oldum, %1$s! Miyav! 🐾</string>
+
+    <!-- Ready -->
+    <string name="ready_title">Tamamdır, artık birlikteyiz! 🐾</string>
+    <string name="ready_title_named">Tamamdır %1$s, artık birlikteyiz! 🐾</string>
+    <string name="ready_body">Çalışma alanın hazır. Acelemiz yok; her şeyi kendi temponda keşfedebilirsin.</string>
+    <string name="ready_cta">MEOW\'u keşfet</string>
+    <string name="ready_next_heading">Sırada neler var</string>
+
+    <!-- Study features (shown on Ready and Home; marked as coming soon until implemented) -->
+    <string name="feature_import_title">PDF\'lerini içe aktar</string>
+    <string name="feature_import_desc">Soru bankalarını kütüphanene ekle.</string>
+    <string name="feature_solve_title">Soru çözmeye başla</string>
+    <string name="feature_solve_desc">Soru soru çöz, üstüne çizerek düşün.</string>
+    <string name="feature_review_title">Yanlışlarından öğren</string>
+    <string name="feature_review_desc">Hata defterinle eksiklerini kapat.</string>
+
+    <!-- Library -->
+    <string name="library_title">Kütüphane</string>
+    <string name="library_add">PDF ekle</string>
+    <string name="library_importing">PDF ekleniyor…</string>
+    <string name="library_empty_title">Kütüphanen henüz boş</string>
+    <string name="library_empty_body">Soru bankalarını ya da deneme PDF\'lerini ekle, burada seni beklesinler.</string>
+    <string name="library_copy_note">MEOW dosyanın bir kopyasını kendi içinde saklar. Cihazındaki orijinal dosyaya dokunulmaz.</string>
+    <string name="library_pages">%1$d sayfa</string>
+    <string name="library_last_page">Sayfa %1$d\'de kaldın</string>
+    <string name="library_untitled">Adsız PDF</string>
+    <string name="library_more">“%1$s” için seçenekler</string>
+    <string name="library_rename">Yeniden adlandır</string>
+    <string name="library_remove">Kütüphaneden kaldır</string>
+    <string name="library_rename_label">PDF adı</string>
+    <string name="library_remove_title">Kütüphaneden kaldırılsın mı?</string>
+    <string name="library_remove_body">“%1$s” ve MEOW\'daki kopyası silinir. Cihazındaki orijinal dosya olduğu gibi kalır.</string>
+    <string name="library_remove_confirm">Kaldır</string>
+    <string name="library_msg_imported">“%1$s” kütüphanene eklendi.</string>
+    <string name="library_msg_duplicate">“%1$s” zaten kütüphanende. Yeni kopya eklenmedi.</string>
+    <string name="library_msg_removed">“%1$s” kaldırıldı.</string>
+    <string name="library_msg_rename_failed">Ad boş olamaz.</string>
+    <string name="import_error_not_pdf">Bu dosya bir PDF değil gibi görünüyor.</string>
+    <string name="import_error_empty">Bu PDF boş, içinde sayfa yok.</string>
+    <string name="import_error_password">Bu PDF şifreli. Şifreli PDF\'ler henüz açılamıyor.</string>
+    <string name="import_error_damaged">Bu PDF açılamadı; dosya bozuk olabilir.</string>
+    <string name="import_error_no_access">Dosyaya erişilemedi. Tekrar seçmeyi dener misin?</string>
+    <string name="import_error_storage">Dosya kopyalanamadı. Cihazında yer kalmamış olabilir.</string>
+    <string name="home_library_title">Kütüphanem</string>
+    <string name="home_library_empty">PDF\'lerini ekle ve oku.</string>
+    <string name="home_library_count">%1$d PDF</string>
+
+    <!-- Viewer -->
+    <string name="viewer_loading">PDF açılıyor…</string>
+    <string name="viewer_error_missing">Bu PDF artık kütüphanende değil.</string>
+    <string name="viewer_error_damaged">Bu PDF açılamadı; dosya bozuk olabilir.</string>
+    <string name="viewer_error_password">Bu PDF şifreli. Şifreli PDF\'ler henüz açılamıyor.</string>
+    <string name="viewer_page_indicator">%1$d / %2$d</string>
+    <string name="viewer_page_cd">Sayfa %1$d / %2$d</string>
+    <string name="viewer_page_failed">Bu sayfa gösterilemedi.</string>
+    <string name="viewer_go_to_page">Sayfaya git</string>
+    <string name="viewer_go_to_page_label">Sayfa numarası (1–%1$d)</string>
+    <string name="viewer_go">Git</string>
+    <string name="viewer_previous_page">Önceki sayfa</string>
+    <string name="viewer_next_page">Sonraki sayfa</string>
+    <string name="viewer_zoom_in">Yakınlaştır</string>
+    <string name="viewer_zoom_out">Uzaklaştır</string>
+    <string name="viewer_zoom_level">%%%1$d</string>
+    <string name="viewer_info_heading">Belge</string>
+    <string name="viewer_info_pages">%1$d sayfa · %2$s</string>
+    <string name="viewer_info_imported">Eklenme: %1$s</string>
+    <string name="viewer_next_steps_heading">Sırada</string>
+    <string name="viewer_next_steps_body">Cevap işaretleme ve bu PDF\'den test oluşturma bir sonraki adımda burada olacak.</string>
+
+    <!-- Annotation -->
+    <string name="annotation_toolbar">Çizim araçları</string>
+    <string name="annotation_tool_navigate">Gezin</string>
+    <string name="annotation_tool_pen">Kalem</string>
+    <string name="annotation_tool_eraser">Silgi</string>
+    <string name="annotation_undo">Geri al</string>
+    <string name="annotation_redo">Yinele</string>
+    <string name="annotation_color_black">Siyah</string>
+    <string name="annotation_color_blue">Mavi</string>
+    <string name="annotation_color_red">Kırmızı</string>
+    <string name="annotation_color_purple">Mor</string>
+    <string name="annotation_color_green">Yeşil</string>
+    <string name="annotation_width_thin">İnce çizgi</string>
+    <string name="annotation_width_medium">Orta çizgi</string>
+    <string name="annotation_width_thick">Kalın çizgi</string>
+    <string name="annotation_two_finger_hint">Kaydırmak ve yakınlaştırmak için iki parmak kullan.</string>
+
+    <!-- Home -->
+    <string name="home_greeting">Merhaba!</string>
+    <string name="home_greeting_named">Merhaba, %1$s!</string>
+    <string name="home_subtitle">Bugün nasıl çalışmak istersen, buradayım.</string>
+    <string name="home_profile_heading">Çalışma profilin</string>
+    <string name="home_profile_empty">Henüz tercih belirtmedin. İstediğin zaman Ayarlar\'dan ekleyebilirsin.</string>
+    <string name="home_profile_session">%1$d dakikalık oturumlar</string>
+    <string name="home_workspace_heading">Çalışma alanın</string>
+    <string name="home_workspace_note">Kütüphanen hazır. Soru çözme ve hata defteri üzerinde çalışıyoruz.</string>
+    <string name="home_open_settings">Ayarlar</string>
+    <string name="cd_cat_tap">MEOW. Sevmek için dokun.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Ayarlar</string>
+    <string name="settings_section_profile">Çalışma profili</string>
+    <string name="settings_section_companion">MEOW</string>
+    <string name="settings_section_appearance">Görünüm</string>
+    <string name="settings_section_account">Hesap</string>
+    <string name="settings_section_data">Veriler</string>
+    <string name="settings_google_sign_in">Google ile giriş yap</string>
+    <string name="settings_google_sign_in_desc">MEOW hesapsız da eksiksiz çalışır. Giriş geldiğinde isteğe bağlı olacak ve verilerini kendiliğinden hiçbir yere yüklemeyecek.</string>
+    <string name="settings_account_signed_in">Giriş yapıldı</string>
+    <string name="settings_name">İsim</string>
+    <string name="settings_exam">Sınav</string>
+    <string name="settings_subjects">Dersler</string>
+    <string name="settings_level">Seviye</string>
+    <string name="settings_session">Oturum süresi</string>
+    <string name="settings_not_set">Belirtilmedi</string>
+    <string name="settings_animations">Kedi animasyonları</string>
+    <string name="settings_animations_desc">Kapalıyken MEOW sakince durur, pil dostu olur.</string>
+    <string name="settings_theme">Tema</string>
+    <string name="theme_system">Sistem</string>
+    <string name="theme_light">Açık</string>
+    <string name="theme_dark">Koyu</string>
+    <string name="settings_restart_onboarding">Karşılama ekranlarını yeniden göster</string>
+    <string name="settings_restart_onboarding_desc">Tercihlerin korunur. Uygulama bir sonraki adımda karşılamayı açar.</string>
+    <string name="settings_reset_all">Tüm tercihleri sıfırla</string>
+    <string name="settings_reset_all_desc">İsim ve çalışma profili silinir, karşılama baştan başlar.</string>
+    <string name="settings_reset_confirm_title">Tercihler sıfırlansın mı?</string>
+    <string name="settings_reset_confirm_body">Bu işlem geri alınamaz. Çalışma verilerin henüz olmadığı için sadece tercihlerin silinir.</string>
+    <string name="settings_reset_confirm_yes">Sıfırla</string>
+    <string name="settings_reset_confirm_no">Vazgeç</string>
+    <string name="settings_privacy_note">MEOW şu an hiçbir veriyi internete göndermiyor. Tercihlerin yalnızca bu cihazda saklanıyor.</string>
+    <string name="settings_version">Sürüm %1$s</string>
+    <string name="settings_subjects_dialog_title">Dersler</string>
+
+    <!-- Mascot speech -->
+    <string name="mascot_hello">Miyav! Hoş geldin.</string>
+    <string name="mascot_tap_1">Mrrr… 💜</string>
+    <string name="mascot_tap_2">Hı? Buradayım!</string>
+    <string name="mascot_tap_3">Kulaklarımın arkasını kaşı, lütfen.</string>
+    <string name="mascot_tap_grumpy">Tamam tamam, gıdıklanıyorum!</string>
+    <string name="mascot_correct">Güzel! Tam isabet.</string>
+    <string name="mascot_incorrect">Olsun, bunu birlikte not alalım.</string>
+    <string name="mascot_test_done">Bitirdin! Biraz mola hak ettin.</string>
+    <string name="mascot_idle_sleep">Zzz…</string>
+    <string name="cd_mascot">MEOW, siyah kedi arkadaşın</string>
+</resources>

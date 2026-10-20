@@ -37,8 +37,9 @@ MEOW aims to bring the entire workflow together in one focused experience — fr
 Technology| Purpose
 Kotlin| Application development
 Jetpack Compose| Native Android UI
-Android PDF rendering| PDF viewing
-Room| Local database — planned
+Jetpack DataStore| On-device preferences
+Android PdfRenderer| PDF viewing
+Room| Local database (PDF library today; questions, tests and attempts planned)
 On-device OCR| Text recognition — planned
 
 The technical implementation may evolve as development progresses.
@@ -58,13 +59,40 @@ MEOW aims to keep personal study materials, annotations, and progress on-device 
 
 Future online and AI-powered features should clearly explain what information is shared with external services. API credentials and personal data must be handled carefully.
 
-Actual data-handling behavior will be documented as features are implemented.
+Today, MEOW makes no network requests. The optional onboarding answers (exam, subjects, level, session length and a name or nickname) are stored only on the device, and can be changed or erased at any time in Settings. No account is required.
 
 🚧 Development Status
 
 MEOW is an early-stage personal project built gradually with a long-term vision.
 
 The goal is not to rush a release, but to create a reliable and genuinely useful study companion — one thoughtful improvement at a time.
+
+What works today:
+
+- First-launch welcome and an eight-screen onboarding flow (exam, subjects, level, session length, name), every question optional and skippable.
+- Preferences saved on-device; onboarding is shown once, and can be revisited or reset from Settings.
+- Home screen with the student's profile, and Settings for profile, theme (system / light / dark) and cat animations.
+- The MEOW cat, drawn in code with nine moods and a reaction model ready for future study events. Ambient animation respects the in-app toggle and the system "remove animations" setting.
+- PDF library: import PDFs with the system file picker (no storage permission), with checks for non-PDF, empty, password-protected and damaged files, and duplicate detection. Rename and remove; MEOW keeps its own copy, so removing never touches the original file.
+- PDF viewer: real page rendering, vertical scrolling, pinch / double-tap / button zoom, page indicator, go-to-page, and resuming at the last-read page. On wide screens a side panel shows document info and navigation.
+- PDF annotation: draw on pages with a finger or stylus (pen in five colours and three widths, whole-stroke eraser, undo/redo). Strokes are stored per page in page-relative coordinates, so they stay aligned through zoom and rotation, and are saved separately from the PDF, which is never modified.
+- Phone and tablet layouts from one codebase: two-pane onboarding on tablets and phones in landscape, two-column home and settings on wider screens, portrait and landscape.
+
+No account is needed. Google sign-in is planned but not implemented; Settings says so rather than showing a button that does nothing. See [docs/ACCOUNTS_AND_SYNC.md](docs/ACCOUNTS_AND_SYNC.md).
+
+Question solving, answer checking, the mistake notebook and statistics are not implemented yet; the app labels them "Yakında". See [docs/PDF_STUDY.md](docs/PDF_STUDY.md).
+
+🛠️ Building
+
+Requirements: JDK 17 or newer and the Android SDK (platform 35). Open the project in Android Studio, or point `local.properties` at your SDK (`sdk.dir=/path/to/android-sdk`) and run:
+
+```
+./gradlew assembleDebug          # build the app
+./gradlew testDebugUnitTest      # unit, Robolectric UI and screenshot tests (JVM only, no emulator)
+./gradlew recordRoborazziDebug   # render every screen to app/build/outputs/roborazzi/
+```
+
+To see onboarding again during development, use Settings → "Karşılama ekranlarını yeniden göster", or clear the app data (`adb shell pm clear com.salihraphics.meow`).
 
 📄 License
 

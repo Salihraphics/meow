@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Meow" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/meow_cream</item>
+    </style>
+
+    <!-- System splash: brand purple with the peeking cat. Held only until preferences load. -->
+    <style name="Theme.Meow.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/meow_brand_purple</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/meow_brand_purple</item>
+        <item name="postSplashScreenTheme">@style/Theme.Meow</item>
+    </style>
+</resources>
