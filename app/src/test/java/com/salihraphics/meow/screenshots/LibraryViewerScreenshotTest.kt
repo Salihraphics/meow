@@ -23,6 +23,7 @@ import com.salihraphics.meow.feature.viewer.PdfPageLoader
 import com.salihraphics.meow.feature.viewer.PdfViewerContent
 import com.salihraphics.meow.feature.viewer.ViewerError
 import com.salihraphics.meow.feature.viewer.ViewerUiState
+import com.salihraphics.meow.feature.viewer.ViewportSnapshot
 import com.salihraphics.meow.testing.sampleDocument
 import org.junit.Rule
 import org.junit.Test
@@ -68,7 +69,7 @@ class LibraryViewerScreenshotTest {
         shoot(name, dark) { LibraryContent(documents, state, thumbnails, LibraryActions()) }
 
     private fun viewer(name: String, state: ViewerUiState, dark: Boolean = false) =
-        shoot(name, dark) { PdfViewerContent(state, resumePage = { 0 }, onPageChanged = {}, onBack = {}) }
+        shoot(name, dark) { PdfViewerContent(state, initialViewport = { ViewportSnapshot(0) }, onViewportChanged = {}, onPageChanged = {}, onBack = {}) }
 
     private val ready = ViewerUiState.Ready(docs[0], SyntheticLoader(312), initialPage = 0)
 

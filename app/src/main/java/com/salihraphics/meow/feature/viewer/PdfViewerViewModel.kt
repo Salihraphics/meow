@@ -1,5 +1,6 @@
 package com.salihraphics.meow.feature.viewer
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.salihraphics.meow.data.library.PdfLibraryRepository
@@ -28,6 +29,8 @@ sealed interface ViewerUiState {
 
 class PdfViewerViewModel(
     private val documentId: String,
+    /** Keeps the exact viewport across process death, not just rotation. */
+    private val savedState: SavedStateHandle,
     private val repository: PdfLibraryRepository,
     private val sessions: PdfRenderSessionFactory,
     /** Outlives this screen, so the final reading position is saved after it closes. */
@@ -42,6 +45,12 @@ class PdfViewerViewModel(
     private var saveJob: Job? = null
     /** A page change not yet written to the library. */
     private var unsavedPage: Int? = null
+
+    /**
+     * Exact reading position and zoom. Lives here, not in the composition, because rotation
+     * recreates the activity and everything remembered in it.
+     */
+    private var viewport: ViewportSnapshot? = savedState.get<FloatArray>(KEY_VIEWPORT)?.toViewport()
 
     init {
         viewModelScope.launch { open() }
@@ -80,14 +89,23 @@ class PdfViewerViewModel(
             return
         }
         session = opened
-        val start = document.lastPageIndex.coerceIn(0, opened.pageSizes.lastIndex)
+        val lastIndex = opened.pageSizes.lastIndex
+        val restored = viewport?.let { it.copy(pageIndex = it.pageIndex.coerceIn(0, lastIndex)) }
+        val start = restored?.pageIndex ?: document.lastPageIndex.coerceIn(0, lastIndex)
+        viewport = restored ?: ViewportSnapshot(pageIndex = start)
         currentPage = start
         repository.recordReading(documentId, start)
         _state.value = ViewerUiState.Ready(document, SessionPageLoader(opened), start)
     }
 
     /** Where to put the reader when the screen is (re)created, e.g. after rotation. */
-    fun resumePage(): Int = currentPage ?: 0
+    fun initialViewport(): ViewportSnapshot = viewport ?: ViewportSnapshot(pageIndex = currentPage ?: 0)
+
+    /** Called as the viewport moves; cheap, so it can run every frame of a scroll. */
+    fun onViewportChanged(snapshot: ViewportSnapshot) {
+        viewport = snapshot
+        savedState[KEY_VIEWPORT] = snapshot.toFloatArray()
+    }
 
     /** Called as the student scrolls; saved after a short pause so scrolling stays cheap. */
     fun onPageChanged(pageIndex: Int) {
@@ -112,5 +130,11 @@ class PdfViewerViewModel(
 
     private companion object {
         const val SAVE_DELAY_MILLIS = 700L
+        const val KEY_VIEWPORT = "viewer.viewport"
+
+        fun ViewportSnapshot.toFloatArray() = floatArrayOf(pageIndex.toFloat(), pageOffsetFraction, zoom, horizontalFraction)
+
+        fun FloatArray.toViewport(): ViewportSnapshot? =
+            if (size == 4) ViewportSnapshot(this[0].toInt(), this[1], this[2], this[3]) else null
     }
 }

@@ -1,5 +1,6 @@
 package com.salihraphics.meow.feature.viewer
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -42,11 +43,16 @@ class PdfViewerViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun viewModel(repo: FakePdfLibraryRepository, sessions: FakeSessionFactory, id: String = "doc-1"): PdfViewerViewModel =
+    private fun viewModel(
+        repo: FakePdfLibraryRepository,
+        sessions: FakeSessionFactory,
+        id: String = "doc-1",
+        savedState: SavedStateHandle = SavedStateHandle(),
+    ): PdfViewerViewModel =
         ViewModelProvider.create(store, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: KClass<T>, extras: CreationExtras): T =
-                PdfViewerViewModel(id, repo, sessions, scope) as T
+                PdfViewerViewModel(id, savedState, repo, sessions, scope) as T
         })[PdfViewerViewModel::class]
 
     @Test
@@ -57,7 +63,7 @@ class PdfViewerViewModelTest {
         val ready = vm.state.value as ViewerUiState.Ready
         assertEquals(9, ready.initialPage)
         assertEquals(24, ready.loader.pageCount)
-        assertEquals(9, vm.resumePage())
+        assertEquals(ViewportSnapshot(pageIndex = 9), vm.initialViewport())
     }
 
     @Test
@@ -111,6 +117,54 @@ class PdfViewerViewModelTest {
         assertTrue(repo.readings.isEmpty())
         advanceUntilIdle()
         assertEquals(listOf("doc-1" to 5), repo.readings)
+    }
+
+    @Test
+    fun exactViewportOutlivesTheUiWithoutReopeningThePdf() = scope.runTest {
+        val repo = FakePdfLibraryRepository(tmp.root).apply { add(sampleDocument(lastPage = 2)) }
+        val sessions = FakeSessionFactory()
+        val vm = viewModel(repo, sessions)
+        advanceUntilIdle()
+        val firstSession = sessions.opened
+
+        // What the viewer reports while the student reads, then rotation recreates the UI.
+        val reading = ViewportSnapshot(pageIndex = 6, pageOffsetFraction = 0.42f, zoom = 2.5f, horizontalFraction = 0.7f)
+        vm.onViewportChanged(reading)
+
+        // The recreated screen asks the same ViewModel where to start.
+        assertEquals(reading, vm.initialViewport())
+        assertTrue(sessions.opened === firstSession)
+        assertEquals(1, sessions.openCount)
+        assertTrue(vm.state.value is ViewerUiState.Ready)
+    }
+
+    @Test
+    fun exactViewportSurvivesProcessDeath() = scope.runTest {
+        val repo = FakePdfLibraryRepository(tmp.root).apply { add(sampleDocument(lastPage = 0)) }
+        val handle = SavedStateHandle()
+        val before = viewModel(repo, FakeSessionFactory(), savedState = handle)
+        advanceUntilIdle()
+        before.onViewportChanged(ViewportSnapshot(pageIndex = 4, pageOffsetFraction = 0.25f, zoom = 1.5625f, horizontalFraction = 0.5f))
+        store.clear()
+
+        // A new ViewModel built from the same saved state, as after the process is restored.
+        val after = viewModel(repo, FakeSessionFactory(), savedState = handle)
+        advanceUntilIdle()
+        assertEquals(4, (after.state.value as ViewerUiState.Ready).initialPage)
+        assertEquals(ViewportSnapshot(4, 0.25f, 1.5625f, 0.5f), after.initialViewport())
+    }
+
+    @Test
+    fun savedViewportIsClampedIfTheDocumentShrank() = scope.runTest {
+        val repo = FakePdfLibraryRepository(tmp.root).apply { add(sampleDocument()) }
+        val handle = SavedStateHandle()
+        viewModel(repo, FakeSessionFactory(pages = 30), savedState = handle).also { advanceUntilIdle() }
+            .onViewportChanged(ViewportSnapshot(pageIndex = 25, zoom = 2f))
+        store.clear()
+        val after = viewModel(repo, FakeSessionFactory(pages = 10), savedState = handle)
+        advanceUntilIdle()
+        assertEquals(9, after.initialViewport().pageIndex)
+        assertEquals(2f, after.initialViewport().zoom)
     }
 
     @Test

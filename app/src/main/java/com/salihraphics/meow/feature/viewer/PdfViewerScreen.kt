@@ -40,7 +40,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -78,7 +77,8 @@ fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     PdfViewerContent(
         state = state,
-        resumePage = viewModel::resumePage,
+        initialViewport = viewModel::initialViewport,
+        onViewportChanged = viewModel::onViewportChanged,
         onPageChanged = viewModel::onPageChanged,
         onBack = onBack,
     )
@@ -87,7 +87,8 @@ fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit) {
 @Composable
 fun PdfViewerContent(
     state: ViewerUiState,
-    resumePage: () -> Int,
+    initialViewport: () -> ViewportSnapshot,
+    onViewportChanged: (ViewportSnapshot) -> Unit,
     onPageChanged: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -111,7 +112,7 @@ fun PdfViewerContent(
                 ViewerTopBar(title = "", onBack = onBack)
                 ViewerErrorMessage(state.error, onBack)
             }
-            is ViewerUiState.Ready -> ReadyViewer(state, resumePage, onPageChanged, onBack)
+            is ViewerUiState.Ready -> ReadyViewer(state, initialViewport, onViewportChanged, onPageChanged, onBack)
         }
     }
 }
@@ -119,11 +120,14 @@ fun PdfViewerContent(
 @Composable
 private fun ReadyViewer(
     state: ViewerUiState.Ready,
-    resumePage: () -> Int,
+    initialViewport: () -> ViewportSnapshot,
+    onViewportChanged: (ViewportSnapshot) -> Unit,
     onPageChanged: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
-    val viewport = remember(state.document.id) { PdfViewportState(resumePage()) }
+    // Phone and side-panel layouts share this one state, so switching between them on
+    // rotation keeps the position too.
+    val viewport = rememberPdfViewportState(state.document.id, initialViewport, onViewportChanged)
     LaunchedEffect(viewport) { snapshotFlow { viewport.currentPage }.collect(onPageChanged) }
     val scope = rememberCoroutineScope()
     var askingPage by rememberSaveable { mutableStateOf(false) }

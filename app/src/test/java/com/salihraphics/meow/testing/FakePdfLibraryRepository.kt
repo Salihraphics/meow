@@ -77,9 +77,11 @@ class FakeRenderSession(pages: Int) : PdfRenderSession {
 
 class FakeSessionFactory(private val pages: Int = 24, private val failure: Exception? = null) : PdfRenderSessionFactory {
     var opened: FakeRenderSession? = null
+    var openCount = 0
 
     override suspend fun open(file: File): PdfRenderSession {
         failure?.let { throw it }
+        openCount++
         return FakeRenderSession(pages).also { opened = it }
     }
 }

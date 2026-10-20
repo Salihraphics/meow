@@ -94,6 +94,7 @@ fun MeowNavHost(
                     initializer {
                         PdfViewerViewModel(
                             documentId = documentId,
+                            savedState = createSavedStateHandle(),
                             repository = container.pdfLibraryRepository,
                             sessions = container.pdfRenderSessionFactory,
                             applicationScope = container.applicationScope,
