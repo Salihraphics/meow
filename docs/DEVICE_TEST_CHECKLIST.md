@@ -40,6 +40,10 @@ keys must still be there after updating.
 - [ ] "Anahtar hangi sayfalarda?" → enter the key's pages → "Oku". Note how many tests were found
       and whether letters are right ("Kaynağı gör" shows the page next to the answers).
 - [ ] "Ayrı anahtar PDF'i ekle" with a separate key PDF, if you have one.
+- [ ] Books with "CEVAP: X" under questions, answers in "Çözümler" pages, or a filled optical
+      form: answers are found, and tapping one shows where it was read ("Bu cevabın bulunduğu
+      yerler"). Where two sources disagree the answer is red and "Onayla" waits for your choice.
+- [ ] A blank "YANITLAR" optical form is not taken as a key.
 - [ ] Uncertain answers are red-outlined; conflicts block "Onayla" until resolved.
 - [ ] "Onayla", then "Yeniden ara": the confirmed tests don't change.
 - [ ] A scanned PDF: the search takes longer (OCR) but the app stays responsive; cancel by

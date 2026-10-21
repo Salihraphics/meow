@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.salihraphics.meow.analysis.AnalysisOutcome
 import com.salihraphics.meow.analysis.key.AnswerKeyParseResult
 import com.salihraphics.meow.analysis.key.AnswerNote
+import com.salihraphics.meow.analysis.key.AnswerProvenance
 import com.salihraphics.meow.analysis.key.Confidence
 import com.salihraphics.meow.analysis.key.DetectedAnswer
 import com.salihraphics.meow.analysis.key.DetectedTest
@@ -16,6 +17,8 @@ import com.salihraphics.meow.data.library.db.MeowDatabase
 import com.salihraphics.meow.domain.model.AnalysisStatus
 import com.salihraphics.meow.domain.model.AnswerConfidence
 import com.salihraphics.meow.domain.model.AnswerOrigin
+import com.salihraphics.meow.domain.model.AnswerSource
+import com.salihraphics.meow.domain.model.KeyTestKind
 import com.salihraphics.meow.domain.model.AnswerType
 import com.salihraphics.meow.domain.model.AttemptResult
 import com.salihraphics.meow.domain.model.KeyTestStatus
@@ -322,5 +325,38 @@ class AnswerKeyRepositoryTest {
         assertEquals(listOf(5), clues.unreadablePages)
         assertEquals(40, clues.scannedPages)
         assertEquals(listOf(239, 238), clues.ocrPages)
+    }
+
+    @Test
+    fun upgradingFromVersion4KeepsAnswersAndAddsTheirSources() {
+        val name = "upgrade4.db"
+        migrations.createDatabase(name, 4).apply {
+            execSQL(
+                "INSERT INTO key_answers (id, testId, questionNumber, type, answer, tolerance, origin, confidence, note, alternatives, " +
+                    "sourcePage, updatedAt, deletedAt) VALUES ('a1', 't1', 1, 'CHOICE', 'C', NULL, 'DETECTED', 'HIGH', NULL, NULL, 9, 1, NULL)",
+            )
+            close()
+        }
+        val db = migrations.runMigrationsAndValidate(name, 5, true)
+        db.query("SELECT answer, sources FROM key_answers WHERE id = 'a1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("C", it.getString(0))
+            assertTrue(it.isNull(1))
+        }
+    }
+
+    @Test
+    fun whereEachAnswerWasReadIsKept() = runBlocking {
+        val conflict = DetectedAnswer(
+            2, "A", Confidence.LOW, 40, AnswerNote.CONFLICT, listOf("A", "E"),
+            listOf(AnswerProvenance(KeySourceKind.KEY_SECTION, 40, "A"), AnswerProvenance(KeySourceKind.LABELLED, 3, "E")),
+        )
+        repo.saveOutcome("doc", "h", outcome(test(1, answer(1, "C"), conflict, answer(3, "D"))))
+        val saved = repo.tests("doc").single().answers.single { it.question == 2 }
+        assertEquals(
+            listOf(AnswerSource(KeyTestKind.KEY_SECTION, 40, "A"), AnswerSource(KeyTestKind.LABELLED, 3, "E")),
+            saved.provenance,
+        )
+        assertEquals(listOf("A", "E"), saved.alternatives)
     }
 }

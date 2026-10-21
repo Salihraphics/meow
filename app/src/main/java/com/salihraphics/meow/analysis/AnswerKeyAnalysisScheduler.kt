@@ -1,5 +1,6 @@
 package com.salihraphics.meow.analysis
 
+import com.salihraphics.meow.analysis.text.PageImages
 import com.salihraphics.meow.analysis.text.PageOcr
 import com.salihraphics.meow.data.answerkey.AnswerKeyRepository
 import com.salihraphics.meow.data.library.PdfLibraryRepository
@@ -41,6 +42,9 @@ class AnswerKeyAnalysisScheduler(
 ) {
     interface OcrHandle : AutoCloseable {
         val ocr: PageOcr
+
+        /** Page images, for optical answer sheets; null when unavailable. */
+        val images: PageImages? get() = null
     }
 
     private val queue = Channel<kotlin.Pair<String, Boolean>>(Channel.UNLIMITED)
@@ -103,7 +107,7 @@ class AnswerKeyAnalysisScheduler(
         val file = library.pdfFile(documentId)
         val ocr = runCatching { ocrFor(file) }.getOrNull()
         try {
-            val outcome = analyzer.analyzeKeyPages(file, pages, ocr?.ocr, progress)
+            val outcome = analyzer.analyzeKeyPages(file, pages, ocr?.ocr, ocr?.images, progress)
             reports?.save(documentId, outcome.report)
             keys.saveKeyPagesOutcome(documentId, pages, outcome)
         } finally {
@@ -119,7 +123,7 @@ class AnswerKeyAnalysisScheduler(
         val file = keyFiles.file(sourceId)
         val ocr = runCatching { ocrFor(file) }.getOrNull()
         try {
-            val outcome = analyzer.analyzeKeyPages(file, null, ocr?.ocr, progress)
+            val outcome = analyzer.analyzeKeyPages(file, null, ocr?.ocr, ocr?.images, progress)
             reports?.save(documentId, outcome.report)
             keys.saveKeySourceOutcome(documentId, sourceId, name.orEmpty(), outcome)
         } finally {
@@ -167,7 +171,7 @@ class AnswerKeyAnalysisScheduler(
         keys.markStarted(documentId, hash)
         val ocr = runCatching { ocrFor(file) }.getOrNull()
         try {
-            val outcome = analyzer.analyze(file, ocr?.ocr) { p -> _progress.update { it + (documentId to p) } }
+            val outcome = analyzer.analyze(file, ocr?.ocr, ocr?.images) { p -> _progress.update { it + (documentId to p) } }
             reports?.save(documentId, outcome.report)
             keys.saveOutcome(documentId, hash, outcome)
         } catch (e: CancellationException) {

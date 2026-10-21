@@ -74,6 +74,8 @@ data class KeyAnswerEntity(
     val sourcePage: Int?,
     val updatedAt: Long,
     val deletedAt: Long?,
+    /** Where the answer was read, see [com.salihraphics.meow.domain.model.AnswerSource.encode]. */
+    @ColumnInfo(defaultValue = "NULL") val sources: String? = null,
 )
 
 /**

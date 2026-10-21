@@ -374,4 +374,15 @@
     <string name="sheet_note">Henüz kontrol edilmedi. Bir cevabı değiştirmek için başka bir şıkkı daire içine al. Çizimi silmek cevabı silmez; buradan silebilirsin.</string>
     <string name="sheet_line">Soru %1$d · %2$s · s. %3$d</string>
     <string name="sheet_clear">Sil</string>
+
+    <!-- Answer sources -->
+    <string name="key_source_labelled">Soruların yanındaki cevaplar: %1$s</string>
+    <string name="key_source_solution">Çözümlerdeki cevaplar: %1$s</string>
+    <string name="key_answer_sources">Bu cevabın bulunduğu yerler:</string>
+    <string name="key_answer_image_note">Optik formdaki işaretten okundu; kitapla karşılaştır.</string>
+    <string name="key_kind_section">Cevap anahtarı</string>
+    <string name="key_kind_margin">Sayfa kenarı</string>
+    <string name="key_kind_in_test">Test sonu tablosu</string>
+    <string name="key_kind_labelled">Soru yanında</string>
+    <string name="key_kind_solution">Çözüm</string>
 </resources>

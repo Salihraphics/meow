@@ -457,6 +457,18 @@ private fun RequestCard(request: KeyRequest, onDismiss: () -> Unit) {
     }
 }
 
+@Composable
+private fun sourceKindLabel(kind: KeyTestKind) = stringResource(
+    when (kind) {
+        KeyTestKind.KEY_SECTION -> R.string.key_kind_section
+        KeyTestKind.PAGE_MARGIN -> R.string.key_kind_margin
+        KeyTestKind.IN_TEST -> R.string.key_kind_in_test
+        KeyTestKind.LABELLED -> R.string.key_kind_labelled
+        KeyTestKind.SOLUTION -> R.string.key_kind_solution
+        KeyTestKind.MANUAL -> R.string.key_source_manual
+    },
+)
+
 /** Where a test's answers were read from, naming a separate key PDF when that's the source. */
 @Composable
 private fun sourceLabel(test: KeyTest, state: AnswerKeyUiState): String {
@@ -470,6 +482,8 @@ private fun sourceLabel(test: KeyTest, state: AnswerKeyUiState): String {
         KeyTestKind.KEY_SECTION -> stringResource(R.string.key_source_section, pages)
         KeyTestKind.PAGE_MARGIN -> stringResource(R.string.key_source_margin, pages)
         KeyTestKind.IN_TEST -> stringResource(R.string.key_source_in_test, pages)
+        KeyTestKind.LABELLED -> stringResource(R.string.key_source_labelled, pages)
+        KeyTestKind.SOLUTION -> stringResource(R.string.key_source_solution, pages)
         KeyTestKind.MANUAL -> stringResource(R.string.key_source_manual)
     }
 }
@@ -827,7 +841,17 @@ private fun AnswerDialog(
                         keyboardActions = done,
                     )
                 }
-                answer?.sourcePage?.let { Text(stringResource(R.string.key_answer_source, it + 1), style = MaterialTheme.typography.bodySmall) }
+                // Where it was read; with several sources, each one and what it said.
+                val sources = answer?.provenance.orEmpty()
+                if (sources.size > 1) {
+                    Text(stringResource(R.string.key_answer_sources), style = MaterialTheme.typography.labelMedium)
+                    sources.forEach { src ->
+                        Text("• ${sourceKindLabel(src.kind)}, s. ${src.page + 1}: ${src.value}", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    answer?.sourcePage?.let { Text(stringResource(R.string.key_answer_source, it + 1), style = MaterialTheme.typography.bodySmall) }
+                }
+                if (answer?.note == "FROM_IMAGE") Text(stringResource(R.string.key_answer_image_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (answer?.note == "OCR_GUESS") Text(stringResource(R.string.key_answer_ocr_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (answer?.note == "CONFLICT") {
                     Text(stringResource(R.string.key_answer_conflict_note, answer.alternatives.joinToString(" / ")), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

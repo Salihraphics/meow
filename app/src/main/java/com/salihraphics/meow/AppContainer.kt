@@ -4,6 +4,7 @@ import android.content.Context
 import com.salihraphics.meow.analysis.AnswerKeyAnalysisScheduler
 import com.salihraphics.meow.analysis.AnswerKeyAnalyzer
 import com.salihraphics.meow.analysis.text.MlKitPageOcr
+import com.salihraphics.meow.analysis.text.RenderedPageImages
 import com.salihraphics.meow.analysis.text.PdfBoxTextSource
 import com.salihraphics.meow.analysis.text.PdfTextSource
 import com.salihraphics.meow.data.account.AccountRepository
@@ -78,6 +79,7 @@ class AppContainer(context: Context) {
                 val session = pdfRenderSessionFactory.open(file)
                 object : AnswerKeyAnalysisScheduler.OcrHandle {
                     override val ocr = MlKitPageOcr(session)
+                    override val images = RenderedPageImages(session)
                     override fun close() = session.close()
                 }
             },

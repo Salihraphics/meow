@@ -13,7 +13,15 @@ import com.salihraphics.meow.analysis.TextLine
  *   numbering that restarts.
  * - **Answer tables among the questions**: a row of numbers with a row of letters under it,
  *   typically at the end of each test.
- * - **Page margins**: compact answer lines ("5.B 6.D 7.A") in a page's header or footer.
+ * - **Page margins**: compact answer lines ("5.B 6.D 7.A") in a page's header or footer, kept
+ *   with the page's test only when their numbers match the questions printed on it.
+ * - **Labelled answers**: "CEVAP: A", "Doğru cevap: D" printed with a question, and explicit
+ *   answers in worked solutions ("Çözümler" pages), each given to the question number printed
+ *   above it in its column.
+ * - **Image readings** handed in by the analyzer (filled bubbles of an optical answer sheet).
+ *
+ * Each finder works on its own; [combine] then joins what they found for the same test, keeps
+ * where every answer came from, and marks disagreements as conflicts instead of choosing.
  *
  * It only reports what is printed. Missing numbers are reported, never filled in, and anything
  * that looks like an OCR misread is kept but marked [Confidence.LOW].
@@ -63,31 +71,60 @@ class AnswerKeyParser(
      * @param forcedKeyPages pages known to hold the key (the student pointed at them, or they come
      *   from a separate answer-key PDF): read as key sections whether or not they look like one.
      */
-    fun parse(pages: List<PageText>, forcedKeyPages: Set<Int> = emptySet()): AnswerKeyParseResult {
-        val prepared = pages.sortedBy { it.pageIndex }.map { prepare(it) }
+    /**
+     * @param imageReadings answers read from page images (filled bubbles), per page and question;
+     *   pages carry them as answer lines and they are marked [AnswerNote.FROM_IMAGE].
+     */
+    fun parse(
+        pages: List<PageText>,
+        forcedKeyPages: Set<Int> = emptySet(),
+        imageReadings: Map<Int, Map<Int, String>> = emptyMap(),
+    ): AnswerKeyParseResult {
+        this.imageReadings = imageReadings
+        val original = pages.sortedBy { it.pageIndex }
+        val prepared = original.map { prepare(it) }
         tableLines = prepared.associate { it.page.pageIndex to it.tableLines }
         val sorted = prepared.map { it.page }
         val keyPages = findKeySectionPages(sorted) + forcedKeyPages
         val pureKeyPages = sorted.filter { it.pageIndex in forcedKeyPages || (it.pageIndex in keyPages && isMostlyAnswers(it)) }
             .map { it.pageIndex }.toSet()
+        val solutionPages = findSolutionPages(original, keyPages)
         val paths = mapQuestionPages(sorted, pureKeyPages)
+        // Solutions name their test ("TEST 3 ÇÖZÜMLERİ") but hold no questions to solve.
+        val questionPaths = paths.filterKeys { it !in solutionPages }
+        // Question numbers printed on each page, from the text as extracted (column by column).
+        val labels = original.associate { it.pageIndex to questionLabels(it) }
 
         val sectionTests = parseKeySection(sorted.filter { it.pageIndex in keyPages }).map { it.build(KeySourceKind.KEY_SECTION) }
         val sectionRefs = sectionTests.mapNotNull { it.ref }
         val linkedSection = sectionTests.map { test ->
             val ref = test.ref ?: return@map test
-            test.copy(questionPages = paths.filter { (_, path) -> sectionRefs.count { matches(it, path) } == 1 && matches(ref, path) }.keys.sorted())
+            test.copy(questionPages = questionPaths.filter { (_, path) -> sectionRefs.count { matches(it, path) } == 1 && matches(ref, path) }.keys.sorted())
         }
         val others = sorted.filter { it.pageIndex !in keyPages }
-        val tableTests = parseAnswerTables(others, paths)
-        val marginTests = parseMargins(others, paths).map { it.build(KeySourceKind.PAGE_MARGIN, it.marginQuestionPages.sorted()) }
+        val tableTests = parseAnswerTables(others, questionPaths)
+        val margins = parseMargins(others.filter { it.pageIndex !in solutionPages }, questionPaths, labels)
+        val marginTests = margins.first.map { it.build(KeySourceKind.PAGE_MARGIN, it.marginQuestionPages.sorted()) }
+        val labelled = parseLabelled(original.filter { it.pageIndex !in pureKeyPages }, paths, labels, solutionPages)
 
         val clues = KeyClues(
             headingPages = sorted.filter { p -> p.lines.any { isKeyHeading(it.text) } }.map { it.pageIndex },
             keyPages = keyPages.sorted(),
             answerLines = sorted.sumOf { p -> p.lines.count { answerLinePairs(it, lenient = false) != null } },
+            labelledAnswers = labelled.placed,
+            unplacedLabels = labelled.unplaced,
+            solutionPages = solutionPages.sorted(),
+            marginLinesOutOfContext = margins.second,
         )
-        return AnswerKeyParseResult((linkedSection + tableTests + marginTests).filter { it.answers.isNotEmpty() }, clues)
+        val found = (linkedSection + tableTests + marginTests + labelled.tests).filter { it.answers.isNotEmpty() }
+        return AnswerKeyParseResult(combine(found), clues)
+    }
+
+    private var imageReadings: Map<Int, Map<Int, String>> = emptyMap()
+
+    private companion object {
+        /** The widest step between neighbouring answers on one line ("4.B 7.D": 5 and 6 missing). */
+        const val MAX_GAP = 3
     }
 
     private val tables = KeyTableReader(choices) { parseTestHeader(it) }
@@ -244,16 +281,26 @@ class AnswerKeyParser(
 
     // ---- Page margins ------------------------------------------------------------------------
 
-    private fun parseMargins(pages: List<PageText>, pageTests: Map<Int, TestRef>): List<TestBuilder> {
+    /**
+     * Answer lines in headers and footers. A line is the page's own key only when its numbers
+     * match questions printed on the page; answers to another section printed in the margin
+     * (numbers that aren't on this page) keep their own name if they print one, or stay unnamed.
+     * Returns the tests and how many lines were out of the page's context.
+     */
+    private fun parseMargins(pages: List<PageText>, pageTests: Map<Int, TestRef>, labels: Map<Int, List<QuestionLabel>>): kotlin.Pair<List<TestBuilder>, Int> {
         val byRef = LinkedHashMap<TestRef, TestBuilder>()
         val unnamed = mutableListOf<TestBuilder>()
+        var outOfContext = 0
         for (page in pages) {
+            val printed = labels[page.pageIndex].orEmpty().map { it.number }.toSet()
             for (line in marginRows(page)) {
                 val text = TurkishText.normalizeSeparators(line.text)
                 val header = parseTestHeader(text)
                 val pairs = answerPairs(header?.second ?: text, lenient = false) ?: continue
                 if (pairs.size < 2) continue
-                val ref = header?.first ?: pageTests[page.pageIndex]
+                val ownPage = printed.isEmpty() || pairs.any { it.question in printed }
+                if (!ownPage) outOfContext++
+                val ref = header?.first ?: pageTests[page.pageIndex]?.takeIf { ownPage }
                 val builder = if (ref != null) {
                     byRef.getOrPut(ref) { TestBuilder(ref) }
                 } else {
@@ -263,10 +310,153 @@ class AnswerKeyParser(
                     else TestBuilder(null).also { unnamed += it }
                 }
                 pairs.forEach { builder.add(it, page.pageIndex) }
-                builder.marginQuestionPages += page.pageIndex
+                if (ownPage) builder.marginQuestionPages += page.pageIndex
             }
         }
-        return byRef.values.toList() + unnamed
+        return (byRef.values.toList() + unnamed) to outOfContext
+    }
+
+    // ---- Labelled answers and worked solutions -----------------------------------------------
+
+    /** A question number printed at the start of a line ("7." / "7)"), with its position. */
+    private class QuestionLabel(val number: Int, val top: Float, val left: Float)
+
+    private val questionNumber = Regex("^(\\d{1,3})[.)]$")
+
+    /**
+     * "CEVAP: A", "Cevap C", "Doğru cevap: D", "Doğru seçenek E", "Yanıt: B" (matched on folded
+     * text; the letter must be printed as a capital, so "cevap a ve b" in a sentence doesn't count).
+     */
+    private val answerLabel = Regex("(?<![\\p{L}])(dogru cevap|dogru secenek|dogru yanit|cevap|yanit)\\s*[:=\\-]?\\s*\\(?([a-e])\\)?(?![\\p{L}\\p{N}])")
+
+    /**
+     * Question numbers at the left edge of their column, in increasing order down the column.
+     * Numbered steps inside a solution ("1. adım") are indented or restart the count, so they drop out.
+     */
+    private fun questionLabels(page: PageText): List<QuestionLabel> {
+        val candidates = page.lines.filter { zoneOf(it) == Zone.BODY && answerLinePairs(it, lenient = true) == null }.mapNotNull { line ->
+            val first = line.words.firstOrNull() ?: return@mapNotNull null
+            val number = questionNumber.find(first.text)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..300 } ?: return@mapNotNull null
+            val rest = TurkishText.normalizeSeparators(line.words.drop(1).joinToString(" ") { it.text })
+            if (parseSectionHeader(line.text) != null || parseTestHeader(rest)?.second?.isEmpty() == true) return@mapNotNull null
+            QuestionLabel(number, line.box.top, first.box.left)
+        }
+        return candidates.groupBy { columnOf(it.left) }.flatMap { (_, column) ->
+            val margin = column.minOf { it.left }
+            var last = 0
+            column.filter { it.left - margin < 0.02f }.sortedBy { it.top }.filter { label ->
+                (label.number > last).also { if (it) last = label.number }
+            }
+        }
+    }
+
+    private fun columnOf(left: Float) = if (left < 0.45f) 0 else 1
+
+    /** "Çözümler" pages: a solutions heading near the top, and the pages that go on with it. */
+    private fun findSolutionPages(pages: List<PageText>, keyPages: Set<Int>): Set<Int> {
+        val result = HashSet<Int>()
+        var continuing = false
+        for (page in pages) {
+            val heading = page.lines.filter { it.box.top < 0.25f }.any { line ->
+                val folded = TurkishText.fold(line.text)
+                folded.length < 40 && Regex("(?<![\\p{L}])cozum(ler|leri|lu)?(?![\\p{L}])").containsMatchIn(folded)
+            }
+            val labelled = page.lines.any { answerLabel.containsMatchIn(TurkishText.fold(it.text)) }
+            continuing = heading || (continuing && labelled && page.pageIndex !in keyPages)
+            if (continuing) result += page.pageIndex
+        }
+        return result
+    }
+
+    private class Labelled(val tests: List<DetectedTest>, val placed: Int, val unplaced: Int)
+
+    /**
+     * Answers printed with their question: each label goes to the nearest question number above it
+     * in its column on the same page. A label with no question number above it is not used.
+     */
+    private fun parseLabelled(pages: List<PageText>, paths: Map<Int, TestRef>, labels: Map<Int, List<QuestionLabel>>, solutionPages: Set<Int>): Labelled {
+        val builders = LinkedHashMap<kotlin.Pair<TestRef?, KeySourceKind>, TestBuilder>()
+        var placed = 0
+        var unplaced = 0
+        for (page in pages) {
+            val numbers = labels[page.pageIndex].orEmpty()
+            val kind = if (page.pageIndex in solutionPages) KeySourceKind.SOLUTION else KeySourceKind.LABELLED
+            for (line in page.lines) {
+                val folded = TurkishText.fold(line.text)
+                for (match in answerLabel.findAll(folded)) {
+                    val letter = line.text[match.groups[2]!!.range.first]
+                    if (!letter.isUpperCase()) continue
+                    val question = numbers.filter { columnOf(it.left) == columnOf(line.box.left) && it.top <= line.box.top + 0.005f }
+                        .maxByOrNull { it.top }
+                    if (question == null) {
+                        unplaced++
+                        continue
+                    }
+                    placed++
+                    val ref = paths[page.pageIndex]
+                    val builder = builders.getOrPut(ref to kind) { TestBuilder(ref) }
+                    builder.add(Pair(question.number, letter.toString(), Confidence.HIGH, null), page.pageIndex)
+                    if (kind == KeySourceKind.LABELLED) builder.marginQuestionPages += page.pageIndex
+                }
+            }
+        }
+        val tests = builders.map { (key, b) -> b.build(key.second, b.marginQuestionPages.sorted()) }
+        return Labelled(tests, placed, unplaced)
+    }
+
+    // ---- Combining the finders ---------------------------------------------------------------
+
+    /**
+     * Joins what different finders found for the same test: the same name (a section and number,
+     * or label), or an unnamed test whose question pages overlap exactly one named test's. Per
+     * question, agreeing readings merge (keeping every provenance); disagreeing ones become a
+     * conflict listing each value and where it was read.
+     */
+    private fun combine(tests: List<DetectedTest>): List<DetectedTest> {
+        val groups = LinkedHashMap<String, MutableList<DetectedTest>>()
+        val unnamed = mutableListOf<DetectedTest>()
+        for (test in tests) {
+            val key = identity(test.ref)
+            if (key == null) unnamed += test else groups.getOrPut(key) { mutableListOf() } += test
+        }
+        val loose = mutableListOf<DetectedTest>()
+        for (test in unnamed) {
+            val overlapping = groups.values.filter { group -> group.any { g -> g.questionPages.any { it in test.questionPages } } }
+            if (test.questionPages.isNotEmpty() && overlapping.size == 1) overlapping.single() += test else loose += test
+        }
+        // In the order they were found (by the first part of each), as the book lists them.
+        val order = java.util.IdentityHashMap<DetectedTest, Int>().apply { tests.forEachIndexed { i, t -> put(t, i) } }
+        return (groups.values.map { group -> order.getValue(group.first()) to merge(group) } + loose.map { order.getValue(it) to it })
+            .sortedBy { it.first }.map { it.second }
+    }
+
+    private fun identity(ref: TestRef?): String? = when {
+        ref == null -> null
+        ref.number != null -> "${ref.section}#${ref.number}"
+        ref.label.isNotBlank() -> "${ref.section}#${TurkishText.fold(ref.label)}"
+        else -> null
+    }
+
+    private fun merge(parts: List<DetectedTest>): DetectedTest {
+        if (parts.size == 1) return parts.single()
+        val kind = parts.minOf { it.kind.ordinal }.let { KeySourceKind.entries[it] }
+        val answers = parts.flatMap { it.answers }.groupBy { it.question }.toSortedMap().map { (question, readings) ->
+            val provenance = readings.flatMap { it.provenance }.distinct()
+            val values = provenance.map { it.answer.uppercase() }.distinct()
+            val best = readings.minBy { it.confidence.ordinal }
+            if (values.size > 1) {
+                DetectedAnswer(question, best.answer, Confidence.LOW, best.sourcePage, AnswerNote.CONFLICT, values, provenance)
+            } else {
+                // Readings that agree: any reading from text outweighs an image or OCR guess.
+                val firm = readings.firstOrNull { it.confidence == Confidence.HIGH } ?: best
+                DetectedAnswer(question, firm.answer, firm.confidence, firm.sourcePage, firm.note, emptyList(), provenance)
+            }
+        }
+        val ref = parts.firstOrNull { it.kind == kind }?.ref ?: parts.first().ref
+        return DetectedTest(
+            ref, kind, parts.flatMap { it.sourcePages }.distinct().sorted(), parts.flatMap { it.questionPages }.distinct().sorted(),
+            answers, issuesOf(answers, kind, parts.any { TestIssue.OutOfOrder in it.issues }),
+        )
     }
 
     /**
@@ -403,8 +593,11 @@ class AnswerKeyParser(
 
         val pairs = found.map { it.first }
         if (pairs.size >= 2) {
-            val steps = pairs.zipWithNext().count { (a, b) -> b.question == a.question + 1 }
-            if (steps.toFloat() / (pairs.size - 1) < 0.6f) return null
+            // Numbers count up, allowing small gaps (an answer printed as an image, or missing) and
+            // repeats (the same question listed twice): gaps are reported later as missing
+            // questions and repeats as conflicts, never filled in or settled.
+            val steps = pairs.zipWithNext().count { (a, b) -> b.question - a.question in 0..MAX_GAP }
+            if (steps.toFloat() / (pairs.size - 1) < 0.75f) return null
         }
         return pairs
     }
@@ -496,7 +689,22 @@ class AnswerKeyParser(
 
     // ---- Test assembly -----------------------------------------------------------------------
 
-    private class TestBuilder(val ref: TestRef?) {
+    private fun issuesOf(answers: List<DetectedAnswer>, kind: KeySourceKind, wentBackwards: Boolean): List<TestIssue> {
+        val issues = mutableListOf<TestIssue>()
+        answers.filter { it.note == AnswerNote.CONFLICT }.forEach { issues += TestIssue.Conflict(it.question, it.alternatives) }
+        if (answers.isNotEmpty()) {
+            // Whole-test keys count from question 1; partial ones (margins, labels) from their first.
+            val start = if (kind == KeySourceKind.KEY_SECTION || kind == KeySourceKind.IN_TEST) 1 else answers.first().question
+            val present = answers.map { it.question }.toSet()
+            val missing = (start..answers.last().question).filter { it !in present }
+            if (missing.isNotEmpty()) issues += TestIssue.Missing(missing)
+        }
+        if (answers.size < 3) issues += TestIssue.TooFew
+        if (wentBackwards) issues += TestIssue.OutOfOrder
+        return issues
+    }
+
+    private inner class TestBuilder(val ref: TestRef?) {
         private val entries = mutableListOf<kotlin.Pair<Pair, Int>>()
         private val sourcePages = sortedSetOf<Int>()
         val marginQuestionPages = sortedSetOf<Int>()
@@ -504,7 +712,13 @@ class AnswerKeyParser(
             private set
         private var wentBackwards = false
 
-        fun add(pair: Pair, page: Int) {
+        fun add(read: Pair, page: Int) {
+            // An answer that came from a page image (a filled bubble) needs a look.
+            val pair = if (imageReadings[page]?.get(read.question) == read.answer && read.confidence == Confidence.HIGH) {
+                read.copy(confidence = Confidence.LOW, note = AnswerNote.FROM_IMAGE)
+            } else {
+                read
+            }
             lastQuestion?.let { if (pair.question < it && entries.none { e -> e.first.question == pair.question }) wentBackwards = true }
             entries += pair to page
             sourcePages += page
@@ -512,28 +726,19 @@ class AnswerKeyParser(
         }
 
         fun build(kind: KeySourceKind, questionPages: List<Int> = emptyList()): DetectedTest {
-            val issues = mutableListOf<TestIssue>()
             val answers = entries.groupBy { it.first.question }.toSortedMap().map { (question, found) ->
                 val distinct = found.map { it.first.answer }.distinct()
                 val first = found.first()
+                val provenance = found.map { (pair, page) -> AnswerProvenance(kind, page, pair.answer) }.distinct()
                 if (distinct.size > 1) {
-                    issues += TestIssue.Conflict(question, distinct)
-                    DetectedAnswer(question, first.first.answer, Confidence.LOW, first.second, AnswerNote.CONFLICT, distinct)
+                    DetectedAnswer(question, first.first.answer, Confidence.LOW, first.second, AnswerNote.CONFLICT, distinct, provenance)
                 } else {
                     // Repeats with the same answer are just repeats; keep the most confident reading.
                     val best = found.minByOrNull { it.first.confidence.ordinal }!!
-                    DetectedAnswer(question, best.first.answer, best.first.confidence, best.second, best.first.note)
+                    DetectedAnswer(question, best.first.answer, best.first.confidence, best.second, best.first.note, emptyList(), provenance)
                 }
             }
-            if (answers.isNotEmpty()) {
-                val start = if (kind == KeySourceKind.PAGE_MARGIN) answers.first().question else 1
-                val present = answers.map { it.question }.toSet()
-                val missing = (start..answers.last().question).filter { it !in present }
-                if (missing.isNotEmpty()) issues += TestIssue.Missing(missing)
-            }
-            if (answers.size < 3) issues += TestIssue.TooFew
-            if (wentBackwards) issues += TestIssue.OutOfOrder
-            return DetectedTest(ref, kind, sourcePages.toList(), questionPages, answers, issues)
+            return DetectedTest(ref, kind, sourcePages.toList(), questionPages, answers, issuesOf(answers, kind, wentBackwards))
         }
     }
 }

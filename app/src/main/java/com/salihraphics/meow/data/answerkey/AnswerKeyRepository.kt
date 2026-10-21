@@ -10,6 +10,7 @@ import com.salihraphics.meow.domain.model.AnalysisStatus
 import com.salihraphics.meow.domain.model.AnswerAttempt
 import com.salihraphics.meow.domain.model.AnswerConfidence
 import com.salihraphics.meow.domain.model.AnswerOrigin
+import com.salihraphics.meow.domain.model.AnswerSource
 import com.salihraphics.meow.domain.model.AnswerType
 import com.salihraphics.meow.domain.model.AttemptResult
 import com.salihraphics.meow.domain.model.KeyAnswer
@@ -135,11 +136,7 @@ class AnswerKeyRepository(
                     sourceDocumentId = sourceId,
                     label = label,
                     testNumber = detected.ref?.number,
-                    kind = when (detected.kind) {
-                        KeySourceKind.KEY_SECTION -> KeyTestKind.KEY_SECTION
-                        KeySourceKind.PAGE_MARGIN -> KeyTestKind.PAGE_MARGIN
-                        KeySourceKind.IN_TEST -> KeyTestKind.IN_TEST
-                    }.name,
+                    kind = kindOf(detected.kind).name,
                     status = KeyTestStatus.DETECTED.name,
                     sourcePages = detected.sourcePages.joinToString(","),
                     // Question pages only make sense in the book itself.
@@ -167,6 +164,7 @@ class AnswerKeyRepository(
                         sourcePage = answer.sourcePage,
                         updatedAt = time,
                         deletedAt = null,
+                        sources = AnswerSource.encode(answer.provenance.map { AnswerSource(kindOf(it.kind), it.page, it.answer) }),
                     )
                 },
             )
@@ -312,7 +310,7 @@ class AnswerKeyRepository(
 
     companion object {
         /** Bump when detection improves enough to be worth re-running on old documents. */
-        const val ANALYZER_VERSION = 3
+        const val ANALYZER_VERSION = 4
     }
 }
 
@@ -339,9 +337,18 @@ private fun KeyTestWithAnswers.toDomain() = KeyTest(
             note = a.note,
             alternatives = a.alternatives?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
             sourcePage = a.sourcePage,
+            provenance = AnswerSource.decode(a.sources),
         )
     },
 )
+
+private fun kindOf(kind: KeySourceKind) = when (kind) {
+    KeySourceKind.KEY_SECTION -> KeyTestKind.KEY_SECTION
+    KeySourceKind.PAGE_MARGIN -> KeyTestKind.PAGE_MARGIN
+    KeySourceKind.IN_TEST -> KeyTestKind.IN_TEST
+    KeySourceKind.LABELLED -> KeyTestKind.LABELLED
+    KeySourceKind.SOLUTION -> KeyTestKind.SOLUTION
+}
 
 private fun DocumentAnalysisEntity.toDomain() = AnalysisInfo(
     documentId, AnalysisStatus.valueOf(status), keyFound, pageCount, textPages, ocrReads, finishedAt, error, AnalysisClues.decode(clues),

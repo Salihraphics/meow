@@ -19,7 +19,16 @@ enum class KeySourceKind {
 
     /** An answer table printed among the questions, usually at the end of each test. */
     IN_TEST,
+
+    /** "CEVAP: A" printed with a question. */
+    LABELLED,
+
+    /** An explicit answer in a worked solution ("Çözümler" pages). */
+    SOLUTION,
 }
+
+/** Where one answer was read: which finder, on which page, and what it said there. */
+data class AnswerProvenance(val kind: KeySourceKind, val page: Int, val answer: String)
 
 enum class AnswerNote {
     /** OCR-looking characters were read as an answer ("5.8" → B); needs a look. */
@@ -27,6 +36,9 @@ enum class AnswerNote {
 
     /** The same question was listed with different answers; [DetectedAnswer.alternatives] has them. */
     CONFLICT,
+
+    /** Read from the page image (a filled bubble), not from text; needs a look. */
+    FROM_IMAGE,
 }
 
 data class DetectedAnswer(
@@ -37,6 +49,8 @@ data class DetectedAnswer(
     val sourcePage: Int,
     val note: AnswerNote? = null,
     val alternatives: List<String> = emptyList(),
+    /** Every place this answer was read, so disagreements can be traced. */
+    val provenance: List<AnswerProvenance> = emptyList(),
 )
 
 sealed interface TestIssue {
@@ -76,6 +90,13 @@ data class KeyClues(
     val keyPages: List<Int> = emptyList(),
     /** Lines that looked like answers ("5. C 6. A …") anywhere in the book. */
     val answerLines: Int = 0,
+    /** "CEVAP: A" labels found, and how many had no question number to belong to. */
+    val labelledAnswers: Int = 0,
+    val unplacedLabels: Int = 0,
+    /** Pages of worked solutions ("Çözümler"). */
+    val solutionPages: List<Int> = emptyList(),
+    /** Margin answer lines left unassigned because they don't match the page's questions. */
+    val marginLinesOutOfContext: Int = 0,
 )
 
 /** What the parser saw on one page; see [AnswerKeyParser.inspect]. */

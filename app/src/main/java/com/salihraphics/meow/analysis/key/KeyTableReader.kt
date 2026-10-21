@@ -98,6 +98,8 @@ internal class KeyTableReader(
         val cells = line.words.takeLast(cellCount).dropWhile { TurkishText.fold(it.text).trimEnd(':', '.') in ROW_LABELS }
         val letters = cells.map { w -> letterOf(w.text)?.let { Cell(it, w.box) } ?: return null }
         if (letters.size < 3) return null
+        // "A A A A A" under the numbers: a row of a blank optical form, not answers.
+        if (letters.size >= 4 && letters.map { it.text }.distinct().size == 1) return null
         val matched = byPosition(letters, numbers)
             // Positions that don't line up (rough OCR boxes) but one letter per number: in order.
             ?: if (letters.size == numbers.size) letters.indices.associateWith { letters[it].text } else return null

@@ -89,7 +89,32 @@ Everything runs on the device. No PDF, page or answer leaves it.
   the headers above them, and tests printed as columns ("TEST 1 TEST 2 TEST 3" over rows of
   "1. C A E") become one test per column. Answers printed without spaces ("1.C2.A3.D", "1C2A3D")
   are split again.
-- The parser (`AnswerKeyParser`, plain Kotlin) finds:
+- One discovery pipeline with independent finders whose results are combined (`AnswerKeyParser`,
+  plain Kotlin; `combine`). Every answer keeps its provenance (finder, page, value). The same test
+  found by several finders (same section and number or name, or an unnamed one whose question
+  pages overlap a single named test) becomes one test: agreeing readings merge, disagreeing ones
+  become a conflict listing each value and where it was read, for the student to settle.
+  Nothing is ever inferred from the question content. The finders:
+  - **Labelled answers** next to questions: "CEVAP: A", "Cevap C", "Doğru cevap: D", "Doğru
+    seçenek E", "Yanıt: B" (capital letter required). Each goes to the nearest question number
+    above it in its column on the same page; numbers are taken only at the column's left edge and
+    in increasing order, so numbered steps inside a solution don't count. A label with no
+    question number above it is not used (counted in the report).
+  - **Worked solutions**: pages under a "Çözümler" / "… ÇÖZÜMLERİ" heading (and the pages that go
+    on with labelled answers). Their explicit answers are read the same way; the test comes from
+    the solutions heading ("TEST 3 ÇÖZÜMLERİ"); solution pages are never counted as the test's
+    question pages.
+  - **Optical answer sheets**: rows of "n A B C D E" (from text or OCR) give where each bubble is;
+    the rendered page image (`RenderedPageImages`, on the device) tells which is filled. One
+    clearly darker bubble = the answer, marked "optik formdan okundu" for review; a blank form
+    ("YANITLAR" with nothing filled) gives nothing, two marks give nothing. A row of identical
+    letters under a row of numbers (a horizontal blank form) is not read as answers.
+  - **Page margins** are the page's own key only when their numbers match questions printed on
+    that page; otherwise (answers to another section) they keep a printed test name or stay
+    unnamed, with no question pages, for the student to assign.
+- Answer lines may skip a few numbers (a missing or image-printed answer) or repeat one: gaps are
+  reported as missing questions and repeats as conflicts, never filled in.
+- Key sections and tables (the original finders):
   - key sections: a heading ("Cevap Anahtarı", "Cevaplar", "Yanıtlar", "Test Cevapları",
     "Doğru Cevaplar", "Answer Key"…), pages that continue one, pages dense with numbered answers,
     including one-answer-per-line tables;

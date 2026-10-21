@@ -26,12 +26,12 @@ import com.salihraphics.meow.data.annotation.StrokeEntity
         SolvingSessionEntity::class,
         KeySourceEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
     // v2 adds annotation_strokes; v3 adds answer keys and attempts; v4 adds solving sessions,
-    // separate key PDFs and search clues.
+    // separate key PDFs and search clues; v5 records where each found answer was read.
     // Existing data is kept.
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5)],
 )
 abstract class MeowDatabase : RoomDatabase() {
     abstract fun pdfDocuments(): PdfDocumentDao

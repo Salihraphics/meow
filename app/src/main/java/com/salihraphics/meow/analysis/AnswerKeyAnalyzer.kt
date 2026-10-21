@@ -3,7 +3,9 @@ package com.salihraphics.meow.analysis
 import com.salihraphics.meow.analysis.key.AnswerKeyParseResult
 import com.salihraphics.meow.analysis.key.AnswerKeyParser
 import com.salihraphics.meow.analysis.key.KeySourceKind
+import com.salihraphics.meow.analysis.key.BubbleSheetReader
 import com.salihraphics.meow.analysis.key.PageInspection
+import com.salihraphics.meow.analysis.text.PageImages
 import com.salihraphics.meow.analysis.key.TurkishText
 import com.salihraphics.meow.analysis.text.OcrRegion
 import com.salihraphics.meow.analysis.text.PageOcr
@@ -52,7 +54,7 @@ class AnswerKeyAnalyzer(
     private val textSource: PdfTextSource,
     private val parser: AnswerKeyParser = AnswerKeyParser(),
 ) {
-    suspend fun analyze(file: File, ocr: PageOcr?, onProgress: (Float) -> Unit = {}): AnalysisOutcome {
+    suspend fun analyze(file: File, ocr: PageOcr?, images: PageImages? = null, onProgress: (Float) -> Unit = {}): AnalysisOutcome {
         val pages = HashMap<Int, PageText>()
         val pageCount: Int
         textSource.open(file).use { document ->
@@ -71,6 +73,7 @@ class AnswerKeyAnalyzer(
         var result = parser.parse(readable)
         var ocrReads = 0
         val ocrPages = HashMap<Int, PageText>()
+        val marginPages = HashMap<Int, PageText>()
 
         if (ocr != null && result.tests.none { it.kind == KeySourceKind.KEY_SECTION }) {
             // In stages, stopping once a key turns up: key pages whose answers weren't text and the
@@ -98,7 +101,6 @@ class AnswerKeyAnalyzer(
             // Still nothing: the answers may be printed in the margins of scanned pages.
             if (!result.found) {
                 val margins = textless.filter { it !in ocrPages }.take(MAX_MARGIN_OCR_PAGES)
-                val marginPages = HashMap<Int, PageText>()
                 margins.forEachIndexed { i, index ->
                     currentCoroutineContext().ensureActive()
                     val lines = listOfNotNull(ocr.read(index, OcrRegion.TOP_MARGIN), ocr.read(index, OcrRegion.BOTTOM_MARGIN))
@@ -110,13 +112,51 @@ class AnswerKeyAnalyzer(
                 if (marginPages.isNotEmpty()) result = parser.parse(merged(readable, ocrPages + marginPages))
             }
         }
+        // Optical answer sheets: text gives the rows, the page image tells which bubble is filled.
+        val bubbles = readBubbles(merged(readable, ocrPages + marginPages), images)
+        if (bubbles.readings.isNotEmpty()) result = parser.parse(bubbles.pages, imageReadings = bubbles.readings)
         onProgress(1f)
         val used = merged(readable, ocrPages)
         val textPages = pageCount - textless.size
         return AnalysisOutcome(
             result, pageCount, textPages, ocrReads, unreadable, ocrPages.keys.sorted(),
-            report(pageCount, textPages, unreadable, ocrPages.keys, used, result, ocr != null),
+            report(pageCount, textPages, unreadable, ocrPages.keys, used, result, ocr != null, bubbles = bubbles.summary),
         )
+    }
+
+    /** What reading optical forms gave; empty when there were none. */
+    data class BubbleSummary(val pages: List<Int> = emptyList(), val marked: Int = 0, val blank: Int = 0, val ambiguous: Int = 0, val noImages: Boolean = false)
+
+    private class Bubbles(val pages: List<PageText>, val readings: Map<Int, Map<Int, String>>, val summary: BubbleSummary)
+
+    /**
+     * Finds "n A B C D E" rows and, if page images are available, which bubble of each is filled.
+     * Marked rows join their page as answer lines; blank forms and doubly marked rows add nothing.
+     */
+    private suspend fun readBubbles(pages: List<PageText>, images: PageImages?): Bubbles {
+        val forms = pages.associateWith { BubbleSheetReader.rows(it) }.filterValues { it.isNotEmpty() }.entries.take(MAX_BUBBLE_PAGES)
+        if (forms.isEmpty()) return Bubbles(pages, emptyMap(), BubbleSummary())
+        if (images == null) return Bubbles(pages, emptyMap(), BubbleSummary(forms.map { it.key.pageIndex }, noImages = true))
+        val readings = HashMap<Int, Map<Int, String>>()
+        val rewritten = HashMap<Int, PageText>()
+        var marked = 0
+        var blank = 0
+        var ambiguous = 0
+        for ((page, rows) in forms) {
+            currentCoroutineContext().ensureActive()
+            val darkness = runCatching { images.darkness(page.pageIndex) }.getOrNull() ?: continue
+            val read = BubbleSheetReader.read(rows, darkness)
+            marked += read.values.count { it is BubbleSheetReader.Reading.Marked }
+            blank += read.values.count { it == BubbleSheetReader.Reading.Blank }
+            ambiguous += read.values.count { it == BubbleSheetReader.Reading.Ambiguous }
+            val letters = read.mapNotNull { (q, r) -> (r as? BubbleSheetReader.Reading.Marked)?.let { q to it.letter } }.toMap()
+            if (letters.isNotEmpty()) {
+                readings[page.pageIndex] = letters
+                rewritten[page.pageIndex] = BubbleSheetReader.withAnswers(page, rows, read)
+            }
+        }
+        val withAnswers = pages.map { p -> rewritten[p.pageIndex] ?: p }
+        return Bubbles(withAnswers, readings, BubbleSummary(forms.map { it.key.pageIndex }, marked, blank, ambiguous))
     }
 
     /**
@@ -124,7 +164,13 @@ class AnswerKeyAnalyzer(
      * every page of a separate answer-key PDF (null). OCR is used for pages whose text gives no
      * answers.
      */
-    suspend fun analyzeKeyPages(file: File, pageIndexes: List<Int>?, ocr: PageOcr?, onProgress: (Float) -> Unit = {}): AnalysisOutcome {
+    suspend fun analyzeKeyPages(
+        file: File,
+        pageIndexes: List<Int>?,
+        ocr: PageOcr?,
+        images: PageImages? = null,
+        onProgress: (Float) -> Unit = {},
+    ): AnalysisOutcome {
         val pages = HashMap<Int, PageText>()
         val pageCount: Int
         textSource.open(file).use { document ->
@@ -150,11 +196,13 @@ class AnswerKeyAnalyzer(
             }
             if (ocrPages.isNotEmpty()) result = parser.parse(merged(readable, ocrPages), forcedKeyPages = pages.keys)
         }
+        val bubbles = readBubbles(merged(readable, ocrPages), images)
+        if (bubbles.readings.isNotEmpty()) result = parser.parse(bubbles.pages, forcedKeyPages = pages.keys, imageReadings = bubbles.readings)
         onProgress(1f)
         val textPages = pages.values.count { it.characterCount >= MIN_TEXT_CHARS && it.pageIndex !in unreadable }
         return AnalysisOutcome(
             result, pageCount, textPages, ocrPages.size, unreadable, ocrPages.keys.sorted(),
-            report(pageCount, textPages, unreadable, ocrPages.keys, merged(readable, ocrPages), result, ocr != null, pages.keys.sorted()),
+            report(pageCount, textPages, unreadable, ocrPages.keys, merged(readable, ocrPages), result, ocr != null, pages.keys.sorted(), bubbles.summary),
         )
     }
 
@@ -173,6 +221,7 @@ class AnswerKeyAnalyzer(
         result: AnswerKeyParseResult,
         ocrAvailable: Boolean,
         askedFor: List<Int>? = null,
+        bubbles: BubbleSummary = BubbleSummary(),
     ): String {
         val inspected = pages.map { parser.inspect(it) }
         val score = { i: PageInspection ->
@@ -187,6 +236,16 @@ class AnswerKeyAnalyzer(
             appendLine("Anahtar başlıklı sayfalar: ${pages(result.clues.headingPages)}")
             appendLine("Anahtar sayılan sayfalar: ${pages(result.clues.keyPages)}")
             appendLine("Cevap satırı (tüm kitap): ${result.clues.answerLines}")
+            with(result.clues) {
+                appendLine("Soru yanında \"Cevap: X\": $labelledAnswers (soru numarasız: $unplacedLabels) · çözüm sayfaları: ${pages(solutionPages)}")
+                if (marginLinesOutOfContext > 0) appendLine("Sayfanın sorularıyla eşleşmeyen kenar cevap satırı: $marginLinesOutOfContext")
+            }
+            if (bubbles.pages.isNotEmpty()) {
+                appendLine(
+                    "Optik form sayfaları: ${pages(bubbles.pages)} · " +
+                        if (bubbles.noImages) "görüntü okunamadı" else "işaretli ${bubbles.marked}, boş ${bubbles.blank}, belirsiz ${bubbles.ambiguous}",
+                )
+            }
             appendLine("Bulunan testler: ${result.tests.size}" + result.tests.take(6).joinToString("") { t ->
                 "\n  · ${t.ref?.label?.ifBlank { null } ?: "adsız"} (${t.kind}): ${t.answers.size} cevap, s. ${pages(t.sourcePages)}" +
                     if (t.issues.isNotEmpty()) ", sorunlar: ${t.issues.joinToString { it.javaClass.simpleName }}" else ""
@@ -214,7 +273,8 @@ class AnswerKeyAnalyzer(
         const val MAX_MARGIN_OCR_PAGES = 400
         const val MAX_KEY_PAGES = 120
         const val MAX_REPORTED_PAGES = 15
-        const val REPORT_VERSION = 1
+        const val MAX_BUBBLE_PAGES = 20
+        const val REPORT_VERSION = 2
 
         /** The last quarter (at least 8 pages), last page first; it's where keys usually are. */
         fun tailPages(pageCount: Int): List<Int> {

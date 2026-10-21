@@ -9,7 +9,7 @@ enum class AnswerConfidence { HIGH, LOW }
 
 enum class KeyTestStatus { DETECTED, CONFIRMED }
 
-enum class KeyTestKind { KEY_SECTION, PAGE_MARGIN, IN_TEST, MANUAL }
+enum class KeyTestKind { KEY_SECTION, PAGE_MARGIN, IN_TEST, LABELLED, SOLUTION, MANUAL }
 
 enum class AnalysisStatus { PENDING, RUNNING, DONE, FAILED }
 
@@ -61,6 +61,20 @@ data class AnalysisClues(
     }
 }
 
+/** One reading of an answer: which finder, on which page (0-based), and what it said. */
+data class AnswerSource(val kind: KeyTestKind, val page: Int, val value: String) {
+    companion object {
+        fun encode(sources: List<AnswerSource>): String? =
+            sources.takeIf { it.isNotEmpty() }?.joinToString(";") { "${it.kind.name}:${it.page}:${it.value}" }
+
+        fun decode(text: String?): List<AnswerSource> = text.orEmpty().split(';').mapNotNull { part ->
+            val (kind, page, value) = part.split(':', limit = 3).takeIf { it.size == 3 } ?: return@mapNotNull null
+            val k = KeyTestKind.entries.firstOrNull { it.name == kind } ?: return@mapNotNull null
+            AnswerSource(k, page.toIntOrNull() ?: return@mapNotNull null, value)
+        }
+    }
+}
+
 /** A separate answer-key PDF added for a book. */
 data class KeySource(val id: String, val displayName: String, val pageCount: Int)
 
@@ -79,6 +93,8 @@ data class KeyAnswer(
     val note: String?,
     val alternatives: List<String>,
     val sourcePage: Int?,
+    /** Every place the answer was read (finder, page, value); several when sources were combined. */
+    val provenance: List<AnswerSource> = emptyList(),
 ) {
     val needsReview: Boolean get() = confidence == AnswerConfidence.LOW || note != null
 }
