@@ -72,8 +72,27 @@ class AnswerKeyRepository(
 
     suspend fun markStarted(documentId: String, contentSha256: String) {
         dao.putAnalysis(
-            DocumentAnalysisEntity(documentId, contentSha256, ANALYZER_VERSION, AnalysisStatus.RUNNING.name, false, 0, 0, 0, now(), null, null),
+            DocumentAnalysisEntity(
+                documentId, contentSha256, ANALYZER_VERSION, AnalysisStatus.RUNNING.name, false, 0, 0, 0, now(), null, null,
+                keptClues(documentId),
+            ),
         )
+    }
+
+    /** Pages the student pointed at as the key, remembered across rescans. */
+    private suspend fun forcedPages(documentId: String): List<Int> = AnalysisClues.decode(dao.analysis(documentId)?.clues).forcedPages
+
+    private suspend fun keptClues(documentId: String): String? =
+        forcedPages(documentId).takeIf { it.isNotEmpty() }?.let { AnalysisClues(forcedPages = it).encode() }
+
+    /**
+     * A detection the student made their own: answers they corrected, or read from pages they
+     * pointed at. Rescans keep it like a confirmed test.
+     */
+    private fun isProtected(test: KeyTestWithAnswers, forced: List<Int>): Boolean {
+        if (test.answers.any { it.deletedAt == null && it.origin == AnswerOrigin.MANUAL.name }) return true
+        val pages = test.test.sourcePages.split(',').mapNotNull { it.toIntOrNull() }
+        return pages.isNotEmpty() && pages.all { it in forced }
     }
 
     /**
@@ -84,13 +103,20 @@ class AnswerKeyRepository(
     suspend fun saveOutcome(documentId: String, contentSha256: String, outcome: AnalysisOutcome) {
         db.withTransaction {
             val time = now()
-            dao.deleteDetectedTests(documentId, documentId, time)
-            insertDetected(documentId, documentId, outcome, time)
+            val forced = forcedPages(documentId)
+            val replaced = dao.tests(documentId).filter {
+                it.test.status == KeyTestStatus.DETECTED.name && it.test.kind != KeyTestKind.MANUAL.name && it.test.sourceDocumentId == documentId
+            }
+            val (kept, stale) = replaced.partition { isProtected(it, forced) }
+            stale.forEach { dao.deleteTest(it.test.id, time) }
+            // What the student pointed at was read there already; this search doesn't add it again.
+            val fresh = outcome.result.tests.filter { t -> t.sourcePages.isEmpty() || !t.sourcePages.all { it in forced } }
+            insertDetected(documentId, documentId, outcome.copy(result = outcome.result.copy(tests = fresh)), time, kept.map { it.test })
             val started = dao.analysis(documentId)?.startedAt ?: time
             dao.putAnalysis(
                 DocumentAnalysisEntity(
                     documentId, contentSha256, ANALYZER_VERSION, AnalysisStatus.DONE.name, outcome.result.found,
-                    outcome.pageCount, outcome.textPages, outcome.ocrReads, started, time, null, outcome.clues.encode(),
+                    outcome.pageCount, outcome.textPages, outcome.ocrReads, started, time, null, outcome.clues.copy(forcedPages = forced).encode(),
                 ),
             )
         }
@@ -106,6 +132,10 @@ class AnswerKeyRepository(
             .filter { it.status == KeyTestStatus.DETECTED.name && it.kind != KeyTestKind.MANUAL.name && it.sourceDocumentId == documentId }
             .filter { t -> t.sourcePages.split(',').mapNotNull { it.toIntOrNull() }.any { it in pages } }
             .forEach { dao.deleteTest(it.id, time) }
+        dao.analysis(documentId)?.let { analysis ->
+            val clues = AnalysisClues.decode(analysis.clues)
+            dao.putAnalysis(analysis.copy(clues = clues.copy(forcedPages = (clues.forcedPages + pages).distinct().sorted()).encode()))
+        }
         insertDetected(documentId, documentId, outcome, time)
     }
 
@@ -121,13 +151,20 @@ class AnswerKeyRepository(
     fun observeKeySources(documentId: String): Flow<List<KeySource>> =
         dao.observeKeySources(documentId).map { rows -> rows.map { KeySource(it.id, it.displayName, it.pageCount) } }
 
-    private suspend fun insertDetected(documentId: String, sourceId: String, outcome: AnalysisOutcome, time: Long): Int {
+    private suspend fun insertDetected(
+        documentId: String,
+        sourceId: String,
+        outcome: AnalysisOutcome,
+        time: Long,
+        kept: List<KeyTestEntity> = emptyList(),
+    ): Int {
         val existing = dao.tests(documentId).map { it.test }
-        val confirmed = existing.filter { it.status == KeyTestStatus.CONFIRMED.name }
+        val confirmed = existing.filter { it.status == KeyTestStatus.CONFIRMED.name } + kept
         var added = 0
         outcome.result.tests.forEach { detected ->
             val label = detected.ref?.label ?: ""
-            if (confirmed.any { it.label == label && it.testNumber == detected.ref?.number && label.isNotEmpty() }) return@forEach
+            val pages = detected.sourcePages.joinToString(",")
+            if (confirmed.any { it.label == label && it.testNumber == detected.ref?.number && (label.isNotEmpty() || it.sourcePages == pages) }) return@forEach
             val testId = newId()
             dao.insertTest(
                 KeyTestEntity(
@@ -138,7 +175,7 @@ class AnswerKeyRepository(
                     testNumber = detected.ref?.number,
                     kind = kindOf(detected.kind).name,
                     status = KeyTestStatus.DETECTED.name,
-                    sourcePages = detected.sourcePages.joinToString(","),
+                    sourcePages = pages,
                     // Question pages only make sense in the book itself.
                     firstQuestionPage = detected.questionPages.minOrNull().takeIf { sourceId == documentId },
                     lastQuestionPage = detected.questionPages.maxOrNull().takeIf { sourceId == documentId },
@@ -175,7 +212,11 @@ class AnswerKeyRepository(
 
     suspend fun markFailed(documentId: String, contentSha256: String, error: String) {
         val started = dao.analysis(documentId)?.startedAt ?: now()
-        dao.putAnalysis(DocumentAnalysisEntity(documentId, contentSha256, ANALYZER_VERSION, AnalysisStatus.FAILED.name, false, 0, 0, 0, started, now(), error))
+        dao.putAnalysis(
+            DocumentAnalysisEntity(
+                documentId, contentSha256, ANALYZER_VERSION, AnalysisStatus.FAILED.name, false, 0, 0, 0, started, now(), error, keptClues(documentId),
+            ),
+        )
     }
 
     /** Runs left RUNNING by a killed process; they are started again. */
@@ -310,7 +351,7 @@ class AnswerKeyRepository(
 
     companion object {
         /** Bump when detection improves enough to be worth re-running on old documents. */
-        const val ANALYZER_VERSION = 4
+        const val ANALYZER_VERSION = 5
     }
 }
 

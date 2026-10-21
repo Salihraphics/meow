@@ -67,19 +67,27 @@ Everything runs on the device. No PDF, page or answer leaves it.
 **Finding the key** (`analysis/`, run by `AnswerKeyAnalysisScheduler` after import and at app start)
 - One document at a time, in the background, cancelled if the document is removed. Results are
   stored per content hash and analyzer version, so a document is read once; "Yeniden ara" forces
-  a new pass, and a new analyzer version re-reads books whose key isn't confirmed. An
-  interrupted run (app killed) is picked up again on the next start.
+  a new pass, and a new analyzer version re-reads books whose key isn't confirmed. A new pass
+  replaces only what earlier passes detected: confirmed tests, typed tests, tests with answers
+  the student corrected, and tests read from pages the student pointed at (remembered in the
+  analysis clues) are kept, and detections repeating them aren't added. An interrupted run (app
+  killed) is picked up again on the next start.
 - Text first: PdfBox-Android reads each page's words with positions (page fractions of the crop
   box, top-left origin, page rotation applied, the same space the pen draws in). The last pages
   (the last quarter, at least 8) are read first, because that's where books put their keys.
 - Text that can't be trusted counts as no text: pages under 25 characters (scans), and pages
   whose text is unreadable, e.g. fonts without a character map that give symbols or consonant
   soup (`AnswerKeyAnalyzer.isReadable`).
-- OCR only when the text gave no key section, in stages that stop once a key turns up (at most
-  12 full pages in all): first pages titled "Cevap Anahtarı" whose answers weren't text (letters
-  drawn as shapes or images) and the last scanned pages; then, only if nothing at all was found,
-  the last text pages. If still nothing, the top and bottom 14% of scanned pages (up to 400) for
-  per-page answer strips. A mixed PDF (digital questions, scanned key) only OCRs its scans.
+- OCR in stages: first up to 12 pages: pages titled "Cevap Anahtarı" whose answers weren't text
+  (letters drawn as shapes or images; only while no key was found in the text), scanned pages
+  next to a key found in text, and the last scanned pages. While a scanned page gives answers,
+  the scanned pages next to it are read too, so a long scanned key is followed to its ends (at
+  most 60 pages in all). Then, only if nothing at all was found, the last text pages. If still
+  nothing, the top and bottom 14% of scanned pages (up to 400) for per-page answer strips. A
+  mixed PDF (digital questions, scanned key) only OCRs its scans. A page whose only text is a
+  short running header or page number (top and bottom 12%, under 200 characters, no answers)
+  counts as scanned; its text is kept beside the OCR. Pages whose text already gave answers are
+  never OCR'd.
 - Each page is read two ways and the one giving more answers is kept: column by column as
   extracted, and as whole printed rows (`KeyTableReader.visualRows`). Table cells spaced wider
   than a word gap otherwise arrive as separate "lines" and the table is never seen; this was one
@@ -96,14 +104,19 @@ Everything runs on the device. No PDF, page or answer leaves it.
   become a conflict listing each value and where it was read, for the student to settle.
   Nothing is ever inferred from the question content. The finders:
   - **Labelled answers** next to questions: "CEVAP: A", "Cevap C", "Doğru cevap: D", "Doğru
-    seçenek E", "Yanıt: B" (capital letter required). Each goes to the nearest question number
-    above it in its column on the same page; numbers are taken only at the column's left edge and
-    in increasing order, so numbered steps inside a solution don't count. A label with no
-    question number above it is not used (counted in the report).
+    seçenek E", "Yanıt: B" (capital letter required), read on whole printed rows, so a letter
+    printed apart from "CEVAP:" still counts. Each goes to the nearest question number above it
+    on the same page, in its column when the page has question numbers in two columns. Numbers
+    are taken at the column's left edge (also in the top band, and fused to text: "1.Verilen"),
+    increasing within a run, so numbered steps inside a solution don't count. A test header on
+    the page ("TEST 2") starts a new run and names the answers below it. A label with no question
+    number above it is not used (counted in the report). Pages the student points at are read
+    for labels too.
   - **Worked solutions**: pages under a "Çözümler" / "… ÇÖZÜMLERİ" heading (and the pages that go
     on with labelled answers). Their explicit answers are read the same way; the test comes from
-    the solutions heading ("TEST 3 ÇÖZÜMLERİ"); solution pages are never counted as the test's
-    question pages.
+    the solutions heading ("TEST 3 ÇÖZÜMLERİ") or a test header above the answer, never from the
+    question pages before the solutions (unnamed solutions stay unnamed, for the student to
+    assign); solution pages are never counted as the test's question pages.
   - **Optical answer sheets**: rows of "n A B C D E" (from text or OCR) give where each bubble is;
     the rendered page image (`RenderedPageImages`, on the device) tells which is filled. One
     clearly darker bubble = the answer, marked "optik formdan okundu" for review; a blank form
@@ -126,7 +139,9 @@ Everything runs on the device. No PDF, page or answer leaves it.
     only to the pages under that day's "TEST 2" header. A day with no tests under it is one test;
   - test headers: "TEST 5", "5. Test", "Deneme Sınavı 2", "Konu Tarama 3", "Pekiştirme Testi",
     "Alıştırma"… Turkish letters are folded (İ/ı, Ş, Ğ, Ü, Ö, Ç), so OCR that drops the dots still
-    matches. A restart at question 1 without a header starts a new, unnamed test;
+    matches. A restart at question 1 or 2 without a header starts a new, unnamed test, also in
+    the middle of a line ("1.A 2.B 3.C 1.D 2.E"). A test's identity includes its kind, so
+    "Deneme 1" and "Test 1" are different tests;
   - header/footer strips like "5.B 6.D 7.A" (at least two answers on the line).
 - OCR noise: with an explicit separator, 8→B, 0/O/Q→D and l/I→1 are accepted, but the answer is
   marked "Emin değilim" (LOW confidence) for the student to check. Without a separator nothing is

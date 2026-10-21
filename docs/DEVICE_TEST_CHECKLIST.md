@@ -43,9 +43,21 @@ keys must still be there after updating.
 - [ ] Books with "CEVAP: X" under questions, answers in "Çözümler" pages, or a filled optical
       form: answers are found, and tapping one shows where it was read ("Bu cevabın bulunduğu
       yerler"). Where two sources disagree the answer is red and "Onayla" waits for your choice.
+- [ ] The PDF with "CEVAP: X" on its solution pages: after updating, MEOW searches it again by
+      itself. Are the answers found, each under the right question and test? Tap two or three
+      and check "Bu cevabın bulunduğu yerler" points at the right solution. If not, share the
+      "Tanılama raporu" (its "soru numarasız" count says whether labels were seen but not placed)
+      with the page numbers of one solution page.
+- [ ] A page holding the solutions of two tests: the answers below the second test's header go
+      to that test, not to the first.
+- [ ] A scanned key longer than 12 pages, or scanned pages with a printed running header: all
+      the key's tests are found (the search takes longer).
 - [ ] A blank "YANITLAR" optical form is not taken as a key.
 - [ ] Uncertain answers are red-outlined; conflicts block "Onayla" until resolved.
 - [ ] "Onayla", then "Yeniden ara": the confirmed tests don't change.
+- [ ] Without confirming, correct one answer, then "Yeniden ara": your correction is still there.
+- [ ] Read a key with "Anahtar hangi sayfalarda?", then "Yeniden ara": that key is still there,
+      and not twice.
 - [ ] A scanned PDF: the search takes longer (OCR) but the app stays responsive; cancel by
       removing the PDF from the library.
 

@@ -41,6 +41,8 @@ data class AnalysisClues(
     val scannedPages: Int = 0,
     /** Pages read in full with OCR. */
     val ocrPages: List<Int> = emptyList(),
+    /** Pages the student pointed at as the key; what was read there survives rescans. */
+    val forcedPages: List<Int> = emptyList(),
 ) {
     fun encode(): String = listOf(
         "h=" + headingPages.joinToString(","),
@@ -49,6 +51,7 @@ data class AnalysisClues(
         "u=" + unreadablePages.joinToString(","),
         "s=$scannedPages",
         "o=" + ocrPages.joinToString(","),
+        "f=" + forcedPages.joinToString(","),
     ).joinToString(";")
 
     companion object {
@@ -56,7 +59,7 @@ data class AnalysisClues(
             if (text.isNullOrBlank()) return AnalysisClues()
             val parts = text.split(';').mapNotNull { part -> part.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
             fun pages(key: String) = parts[key].orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
-            return AnalysisClues(pages("h"), pages("k"), parts["l"]?.toIntOrNull() ?: 0, pages("u"), parts["s"]?.toIntOrNull() ?: 0, pages("o"))
+            return AnalysisClues(pages("h"), pages("k"), parts["l"]?.toIntOrNull() ?: 0, pages("u"), parts["s"]?.toIntOrNull() ?: 0, pages("o"), pages("f"))
         }
     }
 }

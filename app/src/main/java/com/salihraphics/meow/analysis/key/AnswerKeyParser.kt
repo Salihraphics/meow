@@ -2,6 +2,7 @@ package com.salihraphics.meow.analysis.key
 
 import com.salihraphics.meow.analysis.PageText
 import com.salihraphics.meow.analysis.TextLine
+import com.salihraphics.meow.analysis.TextWord
 
 /**
  * Finds answer keys in positioned page text (from the PDF or from OCR).
@@ -105,7 +106,8 @@ class AnswerKeyParser(
         val tableTests = parseAnswerTables(others, questionPaths)
         val margins = parseMargins(others.filter { it.pageIndex !in solutionPages }, questionPaths, labels)
         val marginTests = margins.first.map { it.build(KeySourceKind.PAGE_MARGIN, it.marginQuestionPages.sorted()) }
-        val labelled = parseLabelled(original.filter { it.pageIndex !in pureKeyPages }, paths, labels, solutionPages)
+        // Labels are read everywhere, pages the student pointed at included.
+        val labelled = parseLabelled(original, paths, labels, solutionPages)
 
         val clues = KeyClues(
             headingPages = sorted.filter { p -> p.lines.any { isKeyHeading(it.text) } }.map { it.pageIndex },
@@ -229,8 +231,14 @@ class AnswerKeyParser(
                     // Numbering restarting without a header means a new, unnamed test.
                     val restarted = header == null && target.lastQuestion != null && pairs.first().question < target.lastQuestion!! &&
                         pairs.first().question <= 2
-                    val into = if (restarted) startTest(section?.let { TestRef(null, "", it.section) }) else target
-                    pairs.forEach { into.add(it, page.pageIndex) }
+                    var into = if (restarted) startTest(section?.let { TestRef(null, "", it.section) }) else target
+                    var previous: Int? = null
+                    for (pair in pairs) {
+                        // The same within a line: "1.A 2.B 3.C 4.D 1.E 2.A" is two tests.
+                        if (previous != null && pair.question < previous && pair.question <= 2) into = startTest(section?.let { TestRef(null, "", it.section) })
+                        into.add(pair, page.pageIndex)
+                        previous = pair.question
+                    }
                 }
                 i++
             }
@@ -321,7 +329,11 @@ class AnswerKeyParser(
     /** A question number printed at the start of a line ("7." / "7)"), with its position. */
     private class QuestionLabel(val number: Int, val top: Float, val left: Float)
 
-    private val questionNumber = Regex("^(\\d{1,3})[.)]$")
+    /** A test (or day/unit) header printed on a page, where the answers under it belong. */
+    private class PageHeader(val ref: TestRef, val top: Float, val left: Float)
+
+    /** "7." or "7)", alone or fused to the text that follows ("7.Verilen"). */
+    private val questionNumber = Regex("^(\\d{1,3})[.)](?:\\p{L}.*)?$")
 
     /**
      * "CEVAP: A", "Cevap C", "Doğru cevap: D", "Doğru seçenek E", "Yanıt: B" (matched on folded
@@ -330,27 +342,47 @@ class AnswerKeyParser(
     private val answerLabel = Regex("(?<![\\p{L}])(dogru cevap|dogru secenek|dogru yanit|cevap|yanit)\\s*[:=\\-]?\\s*\\(?([a-e])\\)?(?![\\p{L}\\p{N}])")
 
     /**
-     * Question numbers at the left edge of their column, in increasing order down the column.
-     * Numbered steps inside a solution ("1. adım") are indented or restart the count, so they drop out.
+     * Question numbers at the left edge of their column (numbered steps inside a solution are
+     * indented, so they drop out). Numbers near the top of the page count too; footers don't.
      */
     private fun questionLabels(page: PageText): List<QuestionLabel> {
-        val candidates = page.lines.filter { zoneOf(it) == Zone.BODY && answerLinePairs(it, lenient = true) == null }.mapNotNull { line ->
+        val candidates = page.lines.filter { zoneOf(it) != Zone.FOOTER && answerLinePairs(it, lenient = true) == null }.mapNotNull { line ->
             val first = line.words.firstOrNull() ?: return@mapNotNull null
             val number = questionNumber.find(first.text)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..300 } ?: return@mapNotNull null
-            val rest = TurkishText.normalizeSeparators(line.words.drop(1).joinToString(" ") { it.text })
-            if (parseSectionHeader(line.text) != null || parseTestHeader(rest)?.second?.isEmpty() == true) return@mapNotNull null
+            val text = TurkishText.normalizeSeparators(line.text)
+            // Headers are not questions: "1. GÜN", "2. TEST", "TEST 1 …".
+            if (parseSectionHeader(text) != null || parseTestHeader(text) != null) return@mapNotNull null
+            if (parseTestHeader(TurkishText.normalizeSeparators(line.words.drop(1).joinToString(" ") { it.text }))?.second?.isEmpty() == true) return@mapNotNull null
             QuestionLabel(number, line.box.top, first.box.left)
         }
-        return candidates.groupBy { columnOf(it.left) }.flatMap { (_, column) ->
+        val twoColumns = twoColumns(candidates.map { it.left })
+        return candidates.groupBy { if (twoColumns) columnOf(it.left) else 0 }.flatMap { (_, column) ->
             val margin = column.minOf { it.left }
-            var last = 0
-            column.filter { it.left - margin < 0.02f }.sortedBy { it.top }.filter { label ->
-                (label.number > last).also { if (it) last = label.number }
-            }
+            column.filter { it.left - margin < 0.02f }
         }
     }
 
     private fun columnOf(left: Float) = if (left < 0.45f) 0 else 1
+
+    /** Question numbers printed in both halves of the page. */
+    private fun twoColumns(lefts: List<Float>) = lefts.any { it < 0.45f } && lefts.any { it >= 0.5f }
+
+    /** Test and day/unit headers on a page, in reading order, each with its section. */
+    private fun pageHeaders(page: PageText): List<PageHeader> {
+        var section: TestRef? = null
+        return page.lines.sortedBy { it.box.top }.mapNotNull { line ->
+            val text = TurkishText.normalizeSeparators(line.text)
+            val sectionHeader = parseSectionHeader(text)?.takeIf { it.second.length < 40 }
+            if (sectionHeader != null) section = sectionHeader.first
+            val rest = sectionHeader?.second ?: text
+            val test = parseTestHeader(rest)?.takeIf { it.second.length < 30 && it.first.number != null }?.first
+            when {
+                test != null -> PageHeader(within(section, test), line.box.top, line.box.left)
+                sectionHeader != null -> PageHeader(sectionHeader.first, line.box.top, line.box.left)
+                else -> null
+            }
+        }
+    }
 
     /** "Çözümler" pages: a solutions heading near the top, and the pages that go on with it. */
     private fun findSolutionPages(pages: List<PageText>, keyPages: Set<Int>): Set<Int> {
@@ -361,7 +393,7 @@ class AnswerKeyParser(
                 val folded = TurkishText.fold(line.text)
                 folded.length < 40 && Regex("(?<![\\p{L}])cozum(ler|leri|lu)?(?![\\p{L}])").containsMatchIn(folded)
             }
-            val labelled = page.lines.any { answerLabel.containsMatchIn(TurkishText.fold(it.text)) }
+            val labelled = tables.visualRows(page).any { answerLabel.containsMatchIn(TurkishText.fold(it.text)) }
             continuing = heading || (continuing && labelled && page.pageIndex !in keyPages)
             if (continuing) result += page.pageIndex
         }
@@ -371,37 +403,77 @@ class AnswerKeyParser(
     private class Labelled(val tests: List<DetectedTest>, val placed: Int, val unplaced: Int)
 
     /**
-     * Answers printed with their question: each label goes to the nearest question number above it
-     * in its column on the same page. A label with no question number above it is not used.
+     * Answers printed with their question ("CEVAP: D"). Each label is read on its whole printed
+     * row (the letter may stand apart) and given to the nearest question number above it, within
+     * the same test: a test header on the page starts a new run of numbers, and numbers must
+     * count up within a run (a solution's numbered steps don't). Columns matter only on pages
+     * with question numbers in two columns.
+     *
+     * The test is the header above the label on the page; on solution pages, otherwise the one
+     * the solutions section last named. Solutions are never given the test of the question pages
+     * before them, and a label with no question number above it is not used.
      */
     private fun parseLabelled(pages: List<PageText>, paths: Map<Int, TestRef>, labels: Map<Int, List<QuestionLabel>>, solutionPages: Set<Int>): Labelled {
         val builders = LinkedHashMap<kotlin.Pair<TestRef?, KeySourceKind>, TestBuilder>()
         var placed = 0
         var unplaced = 0
+        var solutionContext: TestRef? = null
         for (page in pages) {
+            val solution = page.pageIndex in solutionPages
+            if (!solution) solutionContext = null
+            val kind = if (solution) KeySourceKind.SOLUTION else KeySourceKind.LABELLED
             val numbers = labels[page.pageIndex].orEmpty()
-            val kind = if (page.pageIndex in solutionPages) KeySourceKind.SOLUTION else KeySourceKind.LABELLED
-            for (line in page.lines) {
-                val folded = TurkishText.fold(line.text)
+            val headers = pageHeaders(page)
+            val split = twoColumns(numbers.map { it.left })
+            fun col(left: Float): Int = if (split) columnOf(left) else 0
+            // The header governing a position: the nearest above it in its column (or, in the
+            // right column, the last one of the left column), else the page's context.
+            val base = if (solution) solutionContext else paths[page.pageIndex]
+            fun headerAt(top: Float, left: Float): PageHeader? {
+                val above = headers.filter { it.top <= top + 0.002f }
+                return above.filter { col(it.left) == col(left) }.maxByOrNull { it.top }
+                    ?: above.filter { col(it.left) < col(left) }.maxByOrNull { it.top }
+            }
+            // Numbers must count up within one test's run in one column.
+            val runs = numbers.groupBy { col(it.left) to headerAt(it.top, it.left) }.flatMap { (_, run) ->
+                var last = 0
+                run.sortedBy { it.top }.filter { label -> (label.number > last).also { if (it) last = label.number } }
+            }
+            for (row in tables.visualRows(page)) {
+                val folded = TurkishText.fold(row.text)
                 for (match in answerLabel.findAll(folded)) {
-                    val letter = line.text[match.groups[2]!!.range.first]
+                    val letter = row.text[match.groups[2]!!.range.first]
                     if (!letter.isUpperCase()) continue
-                    val question = numbers.filter { columnOf(it.left) == columnOf(line.box.left) && it.top <= line.box.top + 0.005f }
+                    val word = wordAt(row, match.range.first)
+                    val header = headerAt(word.box.top, word.box.left)
+                    val question = runs.filter { col(it.left) == col(word.box.left) && it.top <= word.box.top + 0.005f }
+                        .filter { headerAt(it.top, it.left) === header }
                         .maxByOrNull { it.top }
                     if (question == null) {
                         unplaced++
                         continue
                     }
                     placed++
-                    val ref = paths[page.pageIndex]
+                    val ref = header?.ref ?: base
                     val builder = builders.getOrPut(ref to kind) { TestBuilder(ref) }
                     builder.add(Pair(question.number, letter.toString(), Confidence.HIGH, null), page.pageIndex)
                     if (kind == KeySourceKind.LABELLED) builder.marginQuestionPages += page.pageIndex
                 }
             }
+            if (solution) headers.lastOrNull()?.let { solutionContext = it.ref }
         }
         val tests = builders.map { (key, b) -> b.build(key.second, b.marginQuestionPages.sorted()) }
         return Labelled(tests, placed, unplaced)
+    }
+
+    /** The word of [line] that the character at [index] of its text falls in. */
+    private fun wordAt(line: TextLine, index: Int): TextWord {
+        var start = 0
+        for (word in line.words) {
+            if (index < start + word.text.length) return word
+            start += word.text.length + 1
+        }
+        return line.words.last()
     }
 
     // ---- Combining the finders ---------------------------------------------------------------
@@ -432,7 +504,7 @@ class AnswerKeyParser(
 
     private fun identity(ref: TestRef?): String? = when {
         ref == null -> null
-        ref.number != null -> "${ref.section}#${ref.number}"
+        ref.number != null -> "${ref.section}#${kindOf(ref)}#${ref.number}"
         ref.label.isNotBlank() -> "${ref.section}#${TurkishText.fold(ref.label)}"
         else -> null
     }
@@ -509,10 +581,20 @@ class AnswerKeyParser(
     private fun matches(key: TestRef, path: TestRef): Boolean {
         if (key.section != null && key.section != path.section) return false
         return when {
-            key.number != null -> key.number == path.number
+            key.number != null -> key.number == path.number && kindOf(key) == kindOf(path)
             // A day or unit with no tests under it: all its pages.
             else -> key.section != null && key.label.isNotEmpty()
         }
+    }
+
+    /**
+     * The kind of test a name says ("test", "deneme", "konu tarama"…), so "Deneme 1" is never
+     * "Test 1". "Deneme Sınavı" and "Deneme" are one kind, as are "Konu Testi" and "Konu".
+     */
+    private fun kindOf(ref: TestRef): String {
+        val name = TurkishText.fold(ref.label.substringAfterLast(" · "))
+        val kind = testHeader.find(name)?.takeIf { it.range.first == 0 }?.groupValues?.get(2) ?: return ""
+        return kind.removeSuffix(" sinavi").removeSuffix(" testi").ifEmpty { kind }
     }
 
     // ---- Line-level recognition --------------------------------------------------------------

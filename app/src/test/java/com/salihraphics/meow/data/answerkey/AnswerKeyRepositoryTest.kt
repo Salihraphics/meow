@@ -359,4 +359,34 @@ class AnswerKeyRepositoryTest {
         )
         assertEquals(listOf("A", "E"), saved.alternatives)
     }
+
+    // ---- Audit: a rescan must not erase the student's work ------------------------------------
+
+    @Test
+    fun aRescanKeepsAnswersTheStudentCorrectedEvenBeforeConfirming() = runBlocking {
+        repo.saveOutcome("doc", "h", outcome(test(1, answer(1, "A"), answer(2, "B"), answer(3, "C"))))
+        val wrong = repo.tests("doc").single().answers.single { it.question == 2 }
+        repo.correctAnswer(wrong.id, AnswerType.CHOICE, "D")
+        // A new analyzer version reads the book again.
+        repo.saveOutcome("doc", "h", outcome(test(1, answer(1, "A"), answer(2, "B"), answer(3, "C"))))
+        val tests = repo.tests("doc")
+        assertEquals(1, tests.size)
+        assertEquals("D", tests.single().answers.single { it.question == 2 }.value)
+        assertEquals(AnswerOrigin.MANUAL, tests.single().answers.single { it.question == 2 }.origin)
+    }
+
+    @Test
+    fun aRescanKeepsTheKeyReadFromPagesTheStudentPointedAt() = runBlocking {
+        repo.saveOutcome("doc", "h", outcome())
+        val pointed = test(1, answer(1, "C"), answer(2, "A"), answer(3, "D")).copy(sourcePages = listOf(200))
+        repo.saveKeyPagesOutcome("doc", listOf(200, 201), outcome(pointed))
+        // The automatic rescan doesn't know about those pages and finds nothing by itself.
+        repo.markStarted("doc", "h")
+        repo.saveOutcome("doc", "h", outcome())
+        assertEquals(listOf("C", "A", "D"), repo.tests("doc").single().answers.map { it.value })
+        // A rescan that does read those pages doesn't add the same test a second time.
+        repo.markStarted("doc", "h")
+        repo.saveOutcome("doc", "h", outcome(pointed))
+        assertEquals(1, repo.tests("doc").size)
+    }
 }

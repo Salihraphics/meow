@@ -75,28 +75,51 @@ class AnswerKeyAnalyzer(
         val ocrPages = HashMap<Int, PageText>()
         val marginPages = HashMap<Int, PageText>()
 
-        if (ocr != null && result.tests.none { it.kind == KeySourceKind.KEY_SECTION }) {
-            // In stages, stopping once a key turns up: key pages whose answers weren't text and the
-            // last scanned pages first; the last text pages (answers drawn as shapes) only if
-            // that found nothing.
+        // A text layer with only a running header or page number over a scanned page: OCR it too,
+        // keeping the text it has.
+        val sparse = readable.filter { isMarginsOnly(it) && parser.inspect(it).answers == 0 }.map { it.pageIndex }.toSet()
+        // Short text is kept beside the OCR, and pages whose text already gave answers aren't read.
+        val kept = sparse + readable.map { it.pageIndex }.filter { it in textless }
+        val scanned = textless.toSet() + sparse - result.tests.flatMap { it.sourcePages }.toSet()
+
+        if (ocr != null) {
+            // Key pages whose answers weren't text, scanned pages next to a key found in text and
+            // the last scanned pages first; while a scanned page gives answers, the scanned pages
+            // next to it too (a long scanned key). Headings are only read when no key turned up,
+            // and the last text pages (answers drawn as shapes) only if all that found nothing.
             val answered = result.tests.flatMap { it.sourcePages }.toSet()
-            val headings = result.clues.headingPages.filter { it !in answered }
+            val keyFound = result.tests.any { it.kind == KeySourceKind.KEY_SECTION }
+            val headings = if (keyFound) emptyList() else result.clues.headingPages.filter { it !in answered }
+            val keyNeighbours = result.tests.filter { it.kind == KeySourceKind.KEY_SECTION }.flatMap { it.sourcePages }
+                .flatMap { listOf(it - 1, it + 1) }.filter { it in scanned }
             val tail = tailPages(pageCount)
-            val firstStage = (headings + tail.filter { it in textless }).distinct().take(MAX_FULL_OCR_PAGES)
-            val secondStage = if (result.found) emptyList() else tail.filter { it !in textless && it !in firstStage }
-            var budget = MAX_FULL_OCR_PAGES
-            for ((stage, pagesToRead) in listOf(firstStage, secondStage).withIndex()) {
-                val batch = pagesToRead.take(budget)
-                if (batch.isEmpty() || (stage > 0 && result.tests.any { it.kind == KeySourceKind.KEY_SECTION })) continue
-                batch.forEachIndexed { i, index ->
-                    currentCoroutineContext().ensureActive()
-                    ocr.read(index, OcrRegion.FULL_PAGE)?.let { ocrPages[index] = it }
-                    ocrReads++
-                    onProgress(0.4f + 0.15f * stage + 0.15f * (i + 1) / batch.size)
+            val firstStage = (headings + keyNeighbours + tail.filter { it in scanned }).distinct().take(MAX_FULL_OCR_PAGES)
+            val queue = ArrayDeque(firstStage)
+            val queued = firstStage.toHashSet()
+            while (queue.isNotEmpty() && ocrReads < MAX_FOLLOWED_OCR_PAGES) {
+                currentCoroutineContext().ensureActive()
+                val index = queue.removeFirst()
+                val page = ocr.read(index, OcrRegion.FULL_PAGE)
+                ocrReads++
+                if (page != null) {
+                    ocrPages[index] = page
+                    if (parser.inspect(page).answers >= MIN_FOLLOWED_ANSWERS) {
+                        for (next in listOf(index + 1, index - 1)) if (next in scanned && queued.add(next)) queue.addFirst(next)
+                    }
                 }
-                budget -= batch.size
-                result = parser.parse(merged(readable, ocrPages))
+                onProgress(0.4f + 0.15f * ocrReads / (ocrReads + queue.size))
             }
+            if (ocrPages.isNotEmpty()) result = parser.parse(merged(readable, ocrPages, kept))
+
+            val budget = (MAX_FULL_OCR_PAGES - firstStage.size).coerceAtLeast(0)
+            val secondStage = if (result.found) emptyList() else tail.filter { it !in scanned && it !in ocrPages }.take(budget)
+            secondStage.forEachIndexed { i, index ->
+                currentCoroutineContext().ensureActive()
+                ocr.read(index, OcrRegion.FULL_PAGE)?.let { ocrPages[index] = it }
+                ocrReads++
+                onProgress(0.55f + 0.15f * (i + 1) / secondStage.size)
+            }
+            if (secondStage.isNotEmpty()) result = parser.parse(merged(readable, ocrPages, kept))
 
             // Still nothing: the answers may be printed in the margins of scanned pages.
             if (!result.found) {
@@ -109,14 +132,14 @@ class AnswerKeyAnalyzer(
                     if (lines.isNotEmpty()) marginPages[index] = PageText(index, lines.sortedBy { it.box.top }, TextSource.OCR)
                     onProgress(0.7f + 0.3f * (i + 1) / margins.size)
                 }
-                if (marginPages.isNotEmpty()) result = parser.parse(merged(readable, ocrPages + marginPages))
+                if (marginPages.isNotEmpty()) result = parser.parse(merged(readable, ocrPages + marginPages, kept))
             }
         }
         // Optical answer sheets: text gives the rows, the page image tells which bubble is filled.
-        val bubbles = readBubbles(merged(readable, ocrPages + marginPages), images)
+        val bubbles = readBubbles(merged(readable, ocrPages + marginPages, kept), images)
         if (bubbles.readings.isNotEmpty()) result = parser.parse(bubbles.pages, imageReadings = bubbles.readings)
         onProgress(1f)
-        val used = merged(readable, ocrPages)
+        val used = merged(readable, ocrPages, kept)
         val textPages = pageCount - textless.size
         return AnalysisOutcome(
             result, pageCount, textPages, ocrReads, unreadable, ocrPages.keys.sorted(),
@@ -264,12 +287,36 @@ class AnswerKeyAnalyzer(
     }
 
     /** OCR text replaces a page's own text where both exist (it was read because the text gave nothing). */
-    private fun merged(text: List<PageText>, ocr: Map<Int, PageText>): List<PageText> =
-        text.filter { it.pageIndex !in ocr } + ocr.values
+    /**
+     * OCR'd pages replace their text, except [kept] pages, whose text lines join the OCR's where
+     * OCR didn't read the same place again.
+     */
+    private fun merged(text: List<PageText>, ocr: Map<Int, PageText>, kept: Set<Int> = emptySet()): List<PageText> {
+        val byIndex = text.associateBy { it.pageIndex }
+        return text.filter { it.pageIndex !in ocr } + ocr.values.map { page ->
+            val own = byIndex[page.pageIndex]?.takeIf { page.pageIndex in kept } ?: return@map page
+            val extra = own.lines.filter { line -> page.lines.none { overlaps(it.box, line.box) } }
+            page.copy(lines = (extra + page.lines).sortedBy { it.box.top })
+        }
+    }
+
+    private fun overlaps(a: TextBox, b: TextBox) = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+    /** Text only in the top and bottom bands, and little of it: a running header over a scan. */
+    private fun isMarginsOnly(page: PageText) = page.characterCount < SPARSE_TEXT_CHARS &&
+        page.lines.all { it.box.bottom <= MARGIN_BAND || it.box.top >= 1f - MARGIN_BAND }
 
     companion object {
         const val MIN_TEXT_CHARS = 25
         const val MAX_FULL_OCR_PAGES = 12
+
+        /** Scanned pages read in all when following a scanned key from page to page. */
+        const val MAX_FOLLOWED_OCR_PAGES = 60
+        const val MIN_FOLLOWED_ANSWERS = 4
+
+        /** Text this short, only in these bands and with no answers, is a header over a scan. */
+        const val SPARSE_TEXT_CHARS = 200
+        const val MARGIN_BAND = 0.12f
         const val MAX_MARGIN_OCR_PAGES = 400
         const val MAX_KEY_PAGES = 120
         const val MAX_REPORTED_PAGES = 15
