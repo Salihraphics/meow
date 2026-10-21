@@ -52,9 +52,10 @@ fun AnswerCheckCard(
     onDismiss: () -> Unit,
     onOpenKey: () -> Unit,
     modifier: Modifier = Modifier,
+    onUndo: (String) -> Unit = {},
 ) {
     if (check is AnswerCheckUi.Recorded) {
-        RecordedNote(check, onDismiss, modifier)
+        RecordedNote(check, onDismiss, { onUndo(check.attemptId) }, modifier)
         return
     }
     val mood = when (check) {
@@ -134,11 +135,14 @@ fun AnswerCheckCard(
     }
 }
 
-/** "Soru 4: C işaretlendi": confirms the reading without saying whether it's right. */
+/**
+ * "Soru 4: C işaretlendi": confirms the reading without saying whether it's right, with a way to
+ * take it back if MEOW read the mark wrong.
+ */
 @Composable
-private fun RecordedNote(check: AnswerCheckUi.Recorded, onDismiss: () -> Unit, modifier: Modifier) {
+private fun RecordedNote(check: AnswerCheckUi.Recorded, onDismiss: () -> Unit, onUndo: () -> Unit, modifier: Modifier) {
     LaunchedEffect(check) {
-        delay(2_500)
+        delay(4_000)
         onDismiss()
     }
     Surface(
@@ -147,11 +151,14 @@ private fun RecordedNote(check: AnswerCheckUi.Recorded, onDismiss: () -> Unit, m
         color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.92f),
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
     ) {
-        Text(
-            stringResource(R.string.check_recorded, check.question, check.letter),
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 18.dp, end = 4.dp)) {
+            Text(
+                stringResource(R.string.check_recorded, check.question, check.letter),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(vertical = 10.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            TextButton(onClick = onUndo) { Text(stringResource(R.string.check_undo), color = MaterialTheme.colorScheme.inversePrimary) }
+        }
     }
 }
 

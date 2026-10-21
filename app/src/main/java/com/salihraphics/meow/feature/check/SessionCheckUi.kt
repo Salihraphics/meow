@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -37,21 +38,25 @@ import androidx.compose.ui.window.DialogProperties
 import com.salihraphics.meow.R
 import com.salihraphics.meow.core.mascot.MascotMood
 import com.salihraphics.meow.core.mascot.MeowCat
+import com.salihraphics.meow.domain.model.AnswerAttempt
 import com.salihraphics.meow.domain.model.AttemptResult
 import com.salihraphics.meow.feature.answerkey.testTitle
 
-/** "7 cevap işaretlendi · Testi kontrol et", shown while answers are being collected. */
+/**
+ * "7 cevap işaretlendi · Testi kontrol et", shown while answers are being collected. The count
+ * opens the answer sheet.
+ */
 @Composable
-fun SessionBar(answered: Int, onCheck: () -> Unit, modifier: Modifier = Modifier) {
+fun SessionBar(answered: Int, onCheck: () -> Unit, modifier: Modifier = Modifier, onShowAnswers: () -> Unit = {}) {
     Surface(
         modifier = modifier.padding(horizontal = 12.dp),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         shadowElevation = 4.dp,
     ) {
-        Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.session_answers, answered), style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.width(12.dp))
+        Row(Modifier.padding(start = 4.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onShowAnswers) { Text(stringResource(R.string.session_answers, answered), style = MaterialTheme.typography.labelLarge) }
+            Spacer(Modifier.width(4.dp))
             Button(onClick = onCheck, shape = CircleShape) { Text(stringResource(R.string.session_check)) }
         }
     }
@@ -109,6 +114,34 @@ fun SessionCheckDialog(
             }
         }
     }
+}
+
+/**
+ * The answers collected so far (latest per question), still unchecked: each can be cleared;
+ * changing one is circling another option.
+ */
+@Composable
+fun AnswerSheetDialog(answers: List<AnswerAttempt>, onClear: (AnswerAttempt) -> Unit, onGoToPage: (Int) -> Unit, onCheck: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.sheet_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.sheet_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
+                    answers.sortedWith(compareBy({ it.pageIndex }, { it.question })).forEach { a ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.sheet_line, a.question, a.selected, a.pageIndex + 1), modifier = Modifier.weight(1f))
+                            TextButton(onClick = { onGoToPage(a.pageIndex) }) { Text(stringResource(R.string.result_go_to_page)) }
+                            TextButton(onClick = { onClear(a) }) { Text(stringResource(R.string.sheet_clear), color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onCheck) { Text(stringResource(R.string.session_check)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.check_dismiss)) } },
+    )
 }
 
 @Composable

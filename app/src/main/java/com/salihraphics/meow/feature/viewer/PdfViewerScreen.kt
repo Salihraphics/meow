@@ -7,6 +7,8 @@ import androidx.compose.runtime.remember
 import com.salihraphics.meow.feature.annotation.AnnotationToolbar
 import com.salihraphics.meow.feature.check.AnswerCheckCard
 import com.salihraphics.meow.feature.check.AnswerCheckUi
+import com.salihraphics.meow.domain.model.AnswerAttempt
+import com.salihraphics.meow.feature.check.AnswerSheetDialog
 import com.salihraphics.meow.feature.check.SessionBar
 import com.salihraphics.meow.feature.check.SessionCheck
 import com.salihraphics.meow.feature.check.SessionCheckDialog
@@ -95,7 +97,7 @@ fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit, onOpenAnsw
         onViewportChanged = viewModel::onViewportChanged,
         onPageChanged = viewModel::onPageChanged,
         onBack = onBack,
-        answers = ViewerAnswers(answerCheck, solving?.latest?.size ?: 0, sessionCheck),
+        answers = ViewerAnswers(answerCheck, solving?.latest.orEmpty(), sessionCheck),
         answerActions = ViewerAnswerActions(
             onChooseOption = viewModel::chooseOption,
             onChooseQuestion = viewModel::chooseQuestion,
@@ -103,6 +105,8 @@ fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit, onOpenAnsw
             onCheckTest = viewModel::checkTest,
             onDismissSessionCheck = viewModel::dismissSessionCheck,
             onAssignTest = viewModel::assignPagesToTest,
+            onUndoAnswer = viewModel::undoAnswer,
+            onClearQuestion = viewModel::clearQuestion,
             onOpenAnswerKey = onOpenAnswerKey,
         ),
     )
@@ -111,10 +115,12 @@ fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit, onOpenAnsw
 /** Answer marking state shown over the pages. */
 data class ViewerAnswers(
     val check: AnswerCheckUi? = null,
-    /** Answers collected and not yet checked. */
-    val answered: Int = 0,
+    /** Answers collected and not yet checked, the latest per question. */
+    val recorded: List<AnswerAttempt> = emptyList(),
     val sessionCheck: SessionCheck? = null,
-)
+) {
+    val answered: Int get() = recorded.size
+}
 
 class ViewerAnswerActions(
     val onChooseOption: (String) -> Unit = {},
@@ -123,6 +129,8 @@ class ViewerAnswerActions(
     val onCheckTest: () -> Unit = {},
     val onDismissSessionCheck: () -> Unit = {},
     val onAssignTest: (String, List<Int>) -> Unit = { _, _ -> },
+    val onUndoAnswer: (String) -> Unit = {},
+    val onClearQuestion: (AnswerAttempt) -> Unit = {},
     /** Opens this document's answer key; null hides the action. */
     val onOpenAnswerKey: (() -> Unit)? = null,
 )
@@ -178,6 +186,7 @@ private fun ReadyViewer(
     LaunchedEffect(viewport) { snapshotFlow { viewport.currentPage }.collect(onPageChanged) }
     val scope = rememberCoroutineScope()
     var askingPage by rememberSaveable { mutableStateOf(false) }
+    var showingSheet by rememberSaveable { mutableStateOf(false) }
     val window = LocalMeowWindow.current
     val sidePanel = window.useTwoPanes || window.width == WidthClass.Expanded
     val pageCount = state.loader.pageCount
@@ -203,10 +212,11 @@ private fun ReadyViewer(
                     onDismiss = actions.onDismissCheck,
                     onOpenKey = { actions.onDismissCheck(); actions.onOpenAnswerKey?.invoke() },
                     modifier = Modifier.padding(bottom = 10.dp),
+                    onUndo = actions.onUndoAnswer,
                 )
             }
             if (answers.answered > 0 && answers.check !is AnswerCheckUi.Ask) {
-                SessionBar(answers.answered, actions.onCheckTest, Modifier.padding(bottom = 10.dp))
+                SessionBar(answers.answered, actions.onCheckTest, Modifier.padding(bottom = 10.dp), onShowAnswers = { showingSheet = true })
             }
             TwoFingerHint(visible = drawing)
             AnnotationToolbar(
@@ -272,6 +282,18 @@ private fun ReadyViewer(
         }
     }
 
+    if (showingSheet && answers.recorded.isNotEmpty()) {
+        AnswerSheetDialog(
+            answers = answers.recorded,
+            onClear = actions.onClearQuestion,
+            onGoToPage = { page ->
+                showingSheet = false
+                scope.launch { viewport.goToPage(page) }
+            },
+            onCheck = { showingSheet = false; actions.onCheckTest() },
+            onDismiss = { showingSheet = false },
+        )
+    }
     answers.sessionCheck?.let { check ->
         SessionCheckDialog(
             check = check,

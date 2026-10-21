@@ -250,19 +250,35 @@ class AnswerCheckingEndToEndTest {
     }
 
     @Test
-    fun undoingACircleWithdrawsItsAnswerAndRedoBringsItBack() {
+    fun undoingTheDrawingKeepsTheAnswer() {
+        setUpBook()
+        val vm = show()
+        circle(1, "A")
+        until { answered().singleOrNull()?.selected == "A" }
+        rule.onNode(hasContentDescription("Geri al")).performClick() // the toolbar's drawing undo
+        val strokes = (vm.state.value as ViewerUiState.Ready).annotations.strokes(0)
+        until { strokes.value.isNullOrEmpty() }
+        // The circle is gone from the page; the answer is still saved.
+        assertEquals(listOf(1 to "A"), answered().map { it.question to it.selected })
+    }
+
+    @Test
+    fun geriAlOnTheNoteTakesTheAnswerBackAndTheSheetClearsAQuestion() {
         setUpBook()
         show()
         circle(1, "B")
         circle(1, "A")
+        waitForText("Soru 1: A işaretlendi")
         until { answered().singleOrNull()?.selected == "A" }
-        rule.onNode(hasContentDescription("Geri al")).performClick()
-        // The A circle is gone, so the earlier B (still on the page) counts again.
+        // The note's "Geri al" (the toolbar's undo is an icon): MEOW read the mark wrong.
+        rule.onNodeWithText("Geri al").performClick()
         until { answered().singleOrNull()?.selected == "B" }
-        rule.onNode(hasContentDescription("Geri al")).performClick()
-        until { answered().isEmpty() }
-        rule.onNode(hasContentDescription("Yinele")).performClick()
-        until { answered().singleOrNull()?.selected == "B" }
+        circle(3, "E")
+        until { answered().size == 2 }
+        rule.onNodeWithText("2 cevap işaretlendi").performClick()
+        waitForText("Cevaplarım")
+        rule.onAllNodesWithText("Sil")[0].performClick()
+        until { answered().map { it.question } == listOf(3) }
     }
 
     @Test

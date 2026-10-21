@@ -216,4 +216,36 @@ class QuestionMappingRegressionTest {
         }
         assertTrue(results.all { it == ChoiceRecognition.Selected(4, "C", all) })
     }
+
+    @Test
+    fun aColumnWithoutReadableNumbersNeverBorrowsTheOtherColumnsNumbers() {
+        // Left column: "1." and "2." are text. Right column: numbers are pictures.
+        val layout = layoutOf {
+            question(1, 0.06f, 0.12f, label = "1.")
+            question(2, 0.06f, 0.52f, label = "2.")
+            listOf(0.12f, 0.52f).forEachIndexed { i, y ->
+                add(Text(0.575f, y, "Aşağıdakilerden hangisi doğrudur?"))
+                add(Text(0.575f, y + 0.08f, all.mapIndexed { k, l -> "$l) ${70 + i * 10 + k}" }.joinToString("    ")))
+            }
+        }
+        val right = layout.questions.filter { it.box.left > 0.5f }
+        assertEquals(2, right.size)
+        assertTrue(right.all { it.number == null })
+        val c = right.first { it.box.top > 0.5f }.options.single { it.letter == "C" }.box
+        val result = ChoiceRecognizer.recognize(circle(c.centerX, c.centerY, 0.02f, 0.012f), layout) as ChoiceRecognition.Unclear
+        assertNull(result.question)
+        assertEquals(listOf(1, 2), layout.numbers)
+        assertEquals(ChoiceRecognition.Selected(2, "C", all), layout.circleAround(2, "C"))
+    }
+
+    @Test
+    fun aSecondOptionSetUnderANumberDoesNotTakeThatNumber() {
+        // Question 5's own options keep 5; another option set further down (its number missing)
+        // is unknown, so circling there is asked, not graded as question 5.
+        val layout = layoutOf {
+            question(5, 0.06f, 0.12f, label = "5.")
+            add(Text(0.105f, 0.40f, all.mapIndexed { k, l -> "$l) ${k + 90}" }.joinToString("    ")))
+        }
+        assertEquals(listOf(5, null), layout.questions.sortedBy { it.box.top }.map { it.number })
+    }
 }

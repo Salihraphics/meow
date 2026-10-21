@@ -252,6 +252,8 @@ class AnswerKeyRepository(
         val time = now()
         val session = dao.openSession(documentId)
             ?: SolvingSessionEntity(newId(), documentId, time, null, null, null, null, time, null).also { dao.insertSession(it) }
+        // The same stroke reported twice is one answer, not two.
+        if (strokeId != null) dao.sessionAttempts(session.id).firstOrNull { it.strokeId == strokeId }?.let { return@withTransaction it.id }
         val id = newId()
         dao.insertAttempt(
             AnswerAttemptEntity(id, documentId, testId, question, pageIndex, selected, origin.name, result.name, strokeId,
@@ -271,14 +273,18 @@ class AnswerKeyRepository(
         else dao.observeSessionAttempts(session.id).map { rows -> SolvingSession(session.id, documentId, session.startedAt, rows.map { it.toDomain() }) }
     }
 
-    /** Circles erased or undone: their answers stop counting. */
-    suspend fun strokesRemoved(strokeIds: Collection<String>) {
-        if (strokeIds.isNotEmpty()) dao.setStrokeRemoved(strokeIds.toList(), true, now())
-    }
+    /** Drops one recorded answer ("Geri al" right after marking); an earlier answer to the question counts again. */
+    suspend fun removeAnswer(attemptId: String) = dao.deleteAttempt(attemptId, now())
 
-    /** Circles brought back by undo or redo: their answers count again. */
-    suspend fun strokesRestored(strokeIds: Collection<String>) {
-        if (strokeIds.isNotEmpty()) dao.setStrokeRemoved(strokeIds.toList(), false, now())
+    /**
+     * Makes a question unanswered again in an open session: every answer recorded for it there
+     * (same test, or same page when the test isn't known) is dropped.
+     */
+    suspend fun clearQuestion(sessionId: String, answer: AnswerAttempt) = db.withTransaction {
+        val time = now()
+        dao.sessionAttempts(sessionId)
+            .filter { it.questionNumber == answer.question && it.testId == answer.testId && (it.testId != null || it.pageIndex == answer.pageIndex) }
+            .forEach { dao.deleteAttempt(it.id, time) }
     }
 
     /** Stores each answer's result and closes the session; the next answer starts a new one. */
@@ -306,7 +312,7 @@ class AnswerKeyRepository(
 
     companion object {
         /** Bump when detection improves enough to be worth re-running on old documents. */
-        const val ANALYZER_VERSION = 2
+        const val ANALYZER_VERSION = 3
     }
 }
 

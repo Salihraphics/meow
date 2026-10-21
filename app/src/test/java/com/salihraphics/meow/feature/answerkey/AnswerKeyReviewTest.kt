@@ -91,8 +91,7 @@ class AnswerKeyReviewTest {
         // Open question 2 (marked uncertain), pick D, save.
         rule.onNode(hasContentDescription("Soru 2: B, Emin değilim")).performClick()
         rule.onNodeWithText("Kitapta iki farklı cevap var: B / D").assertExists()
-        rule.onNode(hasContentDescription("D")).performClick()
-        rule.onNodeWithText("Kaydet").performClick()
+        rule.onNode(hasContentDescription("D")).performClick() // one tap saves a correction
         rule.waitUntil(5_000) { runBlocking { keys.tests("doc") }.single().answers[1].value == "D" }
         assertEquals(AnswerOrigin.MANUAL, runBlocking { keys.tests("doc") }.single().answers[1].origin)
 

@@ -238,15 +238,23 @@ class AnswerKeyRepositoryTest {
     }
 
     @Test
-    fun anErasedCircleStopsCountingAndUndoBringsItBack() = runBlocking {
+    fun theSameStrokeReportedTwiceIsOneAnswer() = runBlocking {
+        val first = repo.recordSelection("doc", null, 1, 0, "B", SelectionOrigin.RECOGNIZED, "s1", null)
+        val again = repo.recordSelection("doc", null, 1, 0, "B", SelectionOrigin.RECOGNIZED, "s1", null)
+        assertEquals(first, again)
+        assertEquals(1, repo.openSession("doc")!!.answers.size)
+    }
+
+    @Test
+    fun undoingAnAnswerBringsBackTheEarlierOneAndClearingEmptiesTheQuestion() = runBlocking {
         repo.recordSelection("doc", null, 1, 0, "B", SelectionOrigin.RECOGNIZED, "s1", null)
-        repo.recordSelection("doc", null, 1, 0, "A", SelectionOrigin.RECOGNIZED, "s2", null)
-        repo.strokesRemoved(listOf("s2"))
-        assertEquals(listOf("B"), repo.openSession("doc")!!.latest.map { it.selected })
-        repo.strokesRemoved(listOf("s1"))
-        assertTrue(repo.openSession("doc")!!.latest.isEmpty())
-        repo.strokesRestored(listOf("s1", "s2"))
-        assertEquals(listOf("A"), repo.openSession("doc")!!.latest.map { it.selected })
+        val second = repo.recordSelection("doc", null, 1, 0, "A", SelectionOrigin.RECOGNIZED, "s2", null)
+        repo.recordSelection("doc", null, 2, 0, "D", SelectionOrigin.RECOGNIZED, "s3", null)
+        repo.removeAnswer(second) // "Geri al" right after marking A
+        assertEquals(listOf(1 to "B", 2 to "D"), repo.openSession("doc")!!.latest.map { it.question to it.selected })
+        val session = repo.openSession("doc")!!
+        repo.clearQuestion(session.id, session.latest.first())
+        assertEquals(listOf(2 to "D"), repo.openSession("doc")!!.latest.map { it.question to it.selected })
     }
 
     @Test
@@ -256,9 +264,6 @@ class AnswerKeyRepositoryTest {
         repo.finishSession(session.id, listOf(AnswerKeyRepository.GradedAttempt(first, "t", AttemptResult.INCORRECT)), 0, 1, 3)
         assertNull(repo.openSession("doc"))
         assertEquals(AttemptResult.INCORRECT, repo.observeAttempts("doc").first().single().result)
-        // Erasing that circle now doesn't rewrite history.
-        repo.strokesRemoved(listOf("s1"))
-        assertEquals(1, repo.observeAttempts("doc").first().size)
         repo.recordSelection("doc", "t", 1, 0, "C", SelectionOrigin.RECOGNIZED, "s9", null)
         val next = repo.openSession("doc")!!
         assertTrue(next.id != session.id)

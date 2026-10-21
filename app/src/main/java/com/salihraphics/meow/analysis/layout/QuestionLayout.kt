@@ -47,6 +47,9 @@ object QuestionLayoutDetector {
     private const val ROW_GAP = 0.07f
     private const val ALIGN = 0.03f
 
+    /** How far right of its number a question's options may start. */
+    private const val MAX_LABEL_INDENT = 0.2f
+
     private data class Candidate(val letter: Char, val box: TextBox, val explicit: Boolean)
     private data class Label(val number: Int, val box: TextBox, val explicit: Boolean)
 
@@ -59,11 +62,9 @@ object QuestionLayoutDetector {
         // groups (a missing number between them) goes to the first, the second stays unknown.
         val columns = columnStarts(labels)
         val claims = groups.map { group -> labelFor(group, labels, columns, groups) }
-        val claimed = HashSet<Label>()
-        val numbered = groups.zip(claims).sortedWith(compareBy({ it.second?.box?.top ?: 2f }, { groupTop(it.first) })).map { (group, label) ->
-            val unique = label != null && claimed.add(label)
-            group to if (unique) label else null
-        }
+        // A number claimed by two option groups can't be told apart: both are asked.
+        val claimCount = claims.filterNotNull().groupingBy { it }.eachCount()
+        val numbered = groups.zip(claims).map { (group, label) -> group to label?.takeIf { claimCount[it] == 1 } }
         // The same number twice on one page means something was misread: trust neither.
         val counts = numbered.mapNotNull { it.second?.number }.groupingBy { it }.eachCount()
         val questions = numbered.map { (group, label) ->
@@ -172,6 +173,8 @@ object QuestionLayoutDetector {
         val nextColumn = columns.firstOrNull { it > column } ?: Float.MAX_VALUE
         return labels
             .filter { it.box.left >= column - 0.02f && it.box.left < nextColumn - 0.02f }
+            // A question number sits just left of (or above) its options, never across the page.
+            .filter { left - it.box.left in -0.02f..MAX_LABEL_INDENT }
             .filter { it.box.top <= top + 0.005f }
             // No other option group between the number and these options: that group is its question.
             .filter { label ->

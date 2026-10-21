@@ -124,12 +124,8 @@ interface AnswerKeyDao {
     @Query("SELECT * FROM answer_attempts WHERE sessionId = :sessionId AND deletedAt IS NULL AND strokeRemoved = 0 ORDER BY createdAt, rowid")
     fun observeSessionAttempts(sessionId: String): Flow<List<AnswerAttemptEntity>>
 
-    /** Only answers still being collected follow their circle; checked results are history. */
-    @Query(
-        "UPDATE answer_attempts SET strokeRemoved = :removed, updatedAt = :now WHERE strokeId IN (:strokeIds) AND sessionId IN " +
-            "(SELECT id FROM solving_sessions WHERE checkedAt IS NULL AND deletedAt IS NULL)",
-    )
-    suspend fun setStrokeRemoved(strokeIds: List<String>, removed: Boolean, now: Long)
+    @Query("UPDATE answer_attempts SET deletedAt = :now, updatedAt = :now WHERE id = :attemptId")
+    suspend fun deleteAttempt(attemptId: String, now: Long)
 
     @Query("UPDATE answer_attempts SET result = :result, testId = :testId, updatedAt = :now WHERE id = :attemptId")
     suspend fun setResult(attemptId: String, testId: String?, result: String, now: Long)

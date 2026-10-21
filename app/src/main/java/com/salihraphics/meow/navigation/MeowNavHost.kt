@@ -134,6 +134,7 @@ fun MeowNavHost(
                         session.close()
                     }
                 },
+                loadReport = { container.analysisReports.load(documentId) },
             )
         }
         composable(

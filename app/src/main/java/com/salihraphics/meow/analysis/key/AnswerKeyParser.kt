@@ -36,6 +36,9 @@ class AnswerKeyParser(
 
     private val optionLabelStart = Regex("^[$choiceClass]\\s*[.)]")
 
+    /** A letter answer directly followed by the next numbered answer. */
+    private val compactBoundary = Regex("(?<=\\d[.)\\-:/]?)([$choiceClass])(?=\\d{1,3}[.)\\-:/]?[$choiceClass](?![\\p{L}]))")
+
     private val testHeader = Regex(
         "^(?:(\\d{1,3})\\s*\\.?\\s*)?" +
             "(test|deneme sinavi|deneme|konu testi|konu tarama|tarama testi|tarama|alistirma|pekistirme testi|pekistirme|" +
@@ -61,7 +64,9 @@ class AnswerKeyParser(
      *   from a separate answer-key PDF): read as key sections whether or not they look like one.
      */
     fun parse(pages: List<PageText>, forcedKeyPages: Set<Int> = emptySet()): AnswerKeyParseResult {
-        val sorted = pages.sortedBy { it.pageIndex }
+        val prepared = pages.sortedBy { it.pageIndex }.map { prepare(it) }
+        tableLines = prepared.associate { it.page.pageIndex to it.tableLines }
+        val sorted = prepared.map { it.page }
         val keyPages = findKeySectionPages(sorted) + forcedKeyPages
         val pureKeyPages = sorted.filter { it.pageIndex in forcedKeyPages || (it.pageIndex in keyPages && isMostlyAnswers(it)) }
             .map { it.pageIndex }.toSet()
@@ -84,6 +89,28 @@ class AnswerKeyParser(
         )
         return AnswerKeyParseResult((linkedSection + tableTests + marginTests).filter { it.answers.isNotEmpty() }, clues)
     }
+
+    private val tables = KeyTableReader(choices) { parseTestHeader(it) }
+
+    /** Per page, the lines that were made from answer tables (see [prepare]). */
+    private var tableLines: Map<Int, Set<TextLine>> = emptyMap()
+
+    /**
+     * The page's lines in the reading that gives the most answers: column by column as
+     * extracted, or whole printed rows (table cells spaced wider than a word gap come apart into
+     * separate "lines" otherwise). Either way, answer tables become answer lines.
+     */
+    private fun prepare(page: PageText): Prepared {
+        val byColumn = tables.rewrite(columnOrder(page.lines))
+        val byRow = tables.rewrite(tables.visualRows(page))
+        val rows = answersIn(byRow.first) > answersIn(byColumn.first)
+        val best = if (rows) byRow else byColumn
+        return Prepared(PageText(page.pageIndex, best.first, page.source), best.second, rows)
+    }
+
+    private class Prepared(val page: PageText, val tableLines: Set<TextLine>, val byRows: Boolean)
+
+    private fun answersIn(lines: List<TextLine>) = lines.sumOf { answerLinePairs(it, lenient = true)?.size ?: 0 }
 
     // ---- Key sections ------------------------------------------------------------------------
 
@@ -188,22 +215,17 @@ class AnswerKeyParser(
         val found = mutableListOf<DetectedTest>()
         var previousTablePage = -1
         for (page in pages) {
-            val lines = columnOrder(page.lines)
+            val made = tableLines[page.pageIndex].orEmpty()
             val builders = mutableListOf<TestBuilder>()
-            var i = 0
-            while (i < lines.size) {
-                val numbers = consecutiveNumbers(TurkishText.normalizeSeparators(lines[i].text))?.takeIf { it.size >= 4 }
-                val row = if (numbers != null && i + 1 < lines.size) gridRow(lines[i + 1].text, numbers.size) else null
-                if (numbers != null && row != null) {
-                    val ref = row.first ?: paths[page.pageIndex]
-                    // A table continuing the previous one (questions 9–16 after 1–8) is the same test.
-                    val b = builders.lastOrNull()?.takeIf { it.ref == ref && it.lastQuestion == numbers.first() - 1 }
-                        ?: TestBuilder(ref).also { builders += it }
-                    row.second.forEachIndexed { k, letter -> b.add(Pair(numbers[k], letter, Confidence.HIGH, null), page.pageIndex) }
-                    i += 2
-                    continue
-                }
-                i++
+            for (line in columnOrder(page.lines).filter { it in made }) {
+                val text = TurkishText.normalizeSeparators(line.text)
+                val header = parseTestHeader(text)
+                val pairs = answerPairs(header?.second ?: text, lenient = true) ?: continue
+                val ref = header?.first ?: paths[page.pageIndex]
+                // A table continuing the previous one (questions 9–16 after 1–8) is the same test.
+                val b = builders.lastOrNull()?.takeIf { it.ref == ref && it.lastQuestion == pairs.first().question - 1 }
+                    ?: TestBuilder(ref).also { builders += it }
+                pairs.forEach { b.add(it, page.pageIndex) }
             }
             if (builders.isEmpty()) continue
             for (b in builders) {
@@ -350,8 +372,10 @@ class AnswerKeyParser(
      * answers make up most of its text and their numbers mostly step up by one; this keeps
      * question text and option lines ("A) 1 B) 2") out.
      */
-    private fun answerPairs(text: String, lenient: Boolean): List<Pair>? {
-        if (text.isBlank() || optionLabelStart.containsMatchIn(text.trimStart())) return null
+    private fun answerPairs(raw: String, lenient: Boolean): List<Pair>? {
+        if (raw.isBlank() || optionLabelStart.containsMatchIn(raw.trimStart())) return null
+        // "1.C2.A3.D" / "1C2A3D": answers printed without spaces get their spaces back.
+        val text = compactBoundary.replace(raw, "$1 ")
         val strict = strictPair.findAll(text).toList()
         val minimum = if (lenient) 1 else 2
         if (strict.size < minimum) return null
@@ -423,6 +447,52 @@ class AnswerKeyParser(
         val twoColumns = left.size >= 3 && right.size >= 3 && left.size + right.size == lines.size
         return if (twoColumns) left.sortedBy { it.box.top } + right.sortedBy { it.box.top } else lines.sortedWith(compareBy({ it.box.top }, { it.box.left }))
     }
+
+    // ---- Diagnostics -------------------------------------------------------------------------
+
+    /**
+     * What this parser sees on one page, for explaining a miss: headings, answer-like lines and
+     * why lines that almost looked like answers were turned down. Only short, key-like excerpts.
+     */
+    fun inspect(page: PageText): PageInspection {
+        val prepared = prepare(page)
+        val lines = prepared.page.lines
+        val made = prepared.tableLines
+        val texts = lines.map { TurkishText.normalizeSeparators(it.text) }
+        val rejected = texts.mapNotNull { text -> rejectionOf(text)?.let { excerpt(text) to it } }.take(3)
+        return PageInspection(
+            pageIndex = page.pageIndex,
+            lines = lines.size,
+            byRows = prepared.byRows,
+            keyHeadings = lines.filter { isKeyHeading(it.text) }.map { excerpt(it.text) }.take(2),
+            testHeaders = texts.mapNotNull { t -> (parseSectionHeader(t)?.second ?: t).let { parseTestHeader(it)?.first?.label } }.distinct().take(6),
+            sections = texts.mapNotNull { parseSectionHeader(it)?.first?.label }.distinct().take(4),
+            answerLines = lines.count { answerLinePairs(it, lenient = true) != null },
+            answers = lines.sumOf { answerLinePairs(it, lenient = true)?.size ?: 0 },
+            tableLines = made.size,
+            numberRows = texts.count { consecutiveNumbers(it) != null },
+            letterRows = texts.count { t -> withoutRowLabel(t).second.let { tok -> tok.size >= 4 && tok.all { it.length == 1 && it[0].uppercaseChar() in choices } } },
+            bubbleRows = texts.count { bubbleRow.matches(it) },
+            rejected = rejected,
+            samples = lines.filter { answerLinePairs(it, lenient = true) != null || it in made }.map { excerpt(it.text) }.take(3),
+        )
+    }
+
+    /** "1 A B C D E": every option printed, the answer marked by a filled shape that isn't text. */
+    private val bubbleRow = Regex("^\\d{1,3}[.)]?\\s+A\\s+B\\s+C\\s+D(\\s+E)?$")
+
+    /** Why a line with several number–letter pairs still isn't an answer line, or null. */
+    private fun rejectionOf(text: String): String? {
+        val strict = strictPair.findAll(compactBoundary.replace(text, "$1 ")).count()
+        if (strict < 2 || answerPairs(parseTestHeader(text)?.second ?: text, lenient = true) != null) return null
+        if (optionLabelStart.containsMatchIn(text.trimStart())) return "option line"
+        val covered = strictPair.findAll(text).sumOf { m -> m.value.count { !it.isWhitespace() } }
+        val total = text.count { !it.isWhitespace() }
+        if (total > 0 && covered * 100 / total < 55) return "answers are ${covered * 100 / total}% of the line"
+        return "numbers don't count up"
+    }
+
+    private fun excerpt(text: String) = text.trim().let { if (it.length > 70) it.take(69) + "…" else it }
 
     // ---- Test assembly -----------------------------------------------------------------------
 

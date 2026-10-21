@@ -1,5 +1,11 @@
 package com.salihraphics.meow.feature.answerkey
 
+import android.content.Intent
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -119,6 +125,7 @@ fun AnswerKeyRoute(
     onBack: () -> Unit,
     /** Renders a page of the book (or of a key PDF, by its id) to check answers against. */
     pagePreview: (suspend (sourceId: String, pageIndex: Int) -> ImageBitmap?)? = null,
+    loadReport: (suspend () -> String?)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     AnswerKeyContent(
@@ -139,6 +146,7 @@ fun AnswerKeyRoute(
             onClearRequest = viewModel::clearRequest,
         ),
         pagePreview = pagePreview,
+        loadReport = loadReport,
     )
 }
 
@@ -157,6 +165,8 @@ fun AnswerKeyContent(
     state: AnswerKeyUiState,
     actions: AnswerKeyActions,
     pagePreview: (suspend (sourceId: String, pageIndex: Int) -> ImageBitmap?)? = null,
+    /** The latest search report, to read and share; null hides the action. */
+    loadReport: (suspend () -> String?)? = null,
 ) {
     val snackbar = remember { SnackbarHostState() }
     val messageText = when (val m = state.message) {
@@ -177,12 +187,17 @@ fun AnswerKeyContent(
     var addingTest by rememberSaveable { mutableStateOf(false) }
     var askingKeyPages by rememberSaveable { mutableStateOf(false) }
     var previewing by remember { mutableStateOf<KeyTest?>(null) }
+    var quickEntry by remember { mutableStateOf<KeyTest?>(null) }
+    var showingReport by rememberSaveable { mutableStateOf(false) }
+    var onlyToCheck by rememberSaveable { mutableStateOf(false) }
     val pickKeyPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(actions.onAddKeyPdf) }
     val findActions = FindKeyActions(
         onPages = { askingKeyPages = true },
         onPdf = { pickKeyPdf.launch(arrayOf("application/pdf")) },
         onManual = { addingTest = true },
+        onReport = loadReport?.let { { showingReport = true } },
     )
+    val toCheck = state.tests.orEmpty().filter { it.needsAttention() }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -220,8 +235,19 @@ fun AnswerKeyContent(
             ) {
                 item { StatusCard(state, findActions) }
                 state.request?.let { request -> item { RequestCard(request, actions.onClearRequest) } }
-                if (!state.tests.isNullOrEmpty()) item { Legend() }
-                items(state.tests.orEmpty(), key = { it.id }) { test ->
+                if (!state.tests.isNullOrEmpty()) {
+                    item { Legend() }
+                    if (toCheck.isNotEmpty()) {
+                        item {
+                            FilterChip(
+                                selected = onlyToCheck,
+                                onClick = { onlyToCheck = !onlyToCheck },
+                                label = { Text(stringResource(R.string.key_filter_to_check, toCheck.size)) },
+                            )
+                        }
+                    }
+                }
+                items(if (onlyToCheck) toCheck else state.tests.orEmpty(), key = { it.id }) { test ->
                     TestCard(
                         test = test,
                         source = sourceLabel(test, state),
@@ -229,6 +255,7 @@ fun AnswerKeyContent(
                         onAddAnswer = { editing = test to null },
                         onEditTest = { editingTest = test },
                         onViewSource = if (pagePreview != null && test.sourcePages.isNotEmpty()) ({ previewing = test }) else null,
+                        onQuickEntry = { quickEntry = test },
                     )
                 }
                 item {
@@ -249,6 +276,7 @@ fun AnswerKeyContent(
                                 TextButton(onClick = findActions.onPdf) { Text(stringResource(R.string.key_add_pdf)) }
                             }
                         }
+                        findActions.onReport?.let { TextButton(onClick = it) { Text(stringResource(R.string.key_report)) } }
                         if (state.tests.orEmpty().any { it.isConfirmed }) {
                             Text(
                                 stringResource(R.string.key_search_again_note),
@@ -292,6 +320,12 @@ fun AnswerKeyContent(
             onRead = { first, last -> actions.onFindKeyPages(first, last); askingKeyPages = false },
         )
     }
+    quickEntry?.let { entering ->
+        // Follow the live test, so answers saved here show up as the dialog moves on.
+        val test = state.tests.orEmpty().firstOrNull { it.id == entering.id } ?: entering
+        QuickEntryDialog(test, onAnswer = { q, letter -> actions.onSetAnswer(test.id, q, AnswerType.CHOICE, letter, null) }, onDismiss = { quickEntry = null })
+    }
+    if (showingReport && loadReport != null) ReportDialog(loadReport, onDismiss = { showingReport = false })
     previewing?.let { test ->
         if (pagePreview != null) SourcePreviewDialog(test, sourceLabel(test, state), pagePreview, onDismiss = { previewing = null })
     }
@@ -308,7 +342,10 @@ fun AnswerKeyContent(
 }
 
 /** The ways to give MEOW the key when it didn't find it: point at pages, add a key PDF, type it. */
-private class FindKeyActions(val onPages: () -> Unit, val onPdf: () -> Unit, val onManual: () -> Unit)
+private class FindKeyActions(val onPages: () -> Unit, val onPdf: () -> Unit, val onManual: () -> Unit, val onReport: (() -> Unit)?)
+
+/** Missing, uncertain or conflicting answers: the tests the "to check" filter keeps. */
+private fun KeyTest.needsAttention() = !isConfirmed && (missingQuestions(this).isNotEmpty() || answers.any { it.needsReview })
 
 @Composable
 private fun StatusCard(state: AnswerKeyUiState, find: FindKeyActions) {
@@ -384,6 +421,7 @@ private fun FindKeyButtons(find: FindKeyActions) {
         Button(onClick = find.onPages) { Text(stringResource(R.string.key_find_pages)) }
         OutlinedButton(onClick = find.onPdf) { Text(stringResource(R.string.key_add_pdf)) }
         TextButton(onClick = find.onManual) { Text(stringResource(R.string.key_manual)) }
+        find.onReport?.let { TextButton(onClick = it) { Text(stringResource(R.string.key_report)) } }
     }
 }
 
@@ -434,6 +472,101 @@ private fun sourceLabel(test: KeyTest, state: AnswerKeyUiState): String {
         KeyTestKind.IN_TEST -> stringResource(R.string.key_source_in_test, pages)
         KeyTestKind.MANUAL -> stringResource(R.string.key_source_manual)
     }
+}
+
+/**
+ * Typing a key one tap per answer: the missing questions first, then onwards from the last one.
+ * Each letter saves and moves to the next question.
+ */
+@Composable
+private fun QuickEntryDialog(test: KeyTest, onAnswer: (Int, String) -> Unit, onDismiss: () -> Unit) {
+    val missing = missingQuestions(test)
+    var question by rememberSaveable(test.id) { mutableIntStateOf(missing.firstOrNull() ?: ((test.answers.lastOrNull()?.question ?: 0) + 1)) }
+    fun next(after: Int): Int {
+        val stillMissing = missingQuestions(test).filter { it > after }
+        return stillMissing.firstOrNull() ?: (maxOf(after, test.answers.lastOrNull()?.question ?: 0) + 1)
+    }
+    val current = test.answers.firstOrNull { it.question == question }?.value
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.key_quick_entry_title, testTitle(test))) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.key_quick_entry_question, question), style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    current?.let { stringResource(R.string.key_quick_entry_current, it) } ?: stringResource(R.string.key_quick_entry_missing, missingQuestions(test).size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ('A'..'E').forEach { letter ->
+                        Surface(
+                            onClick = {
+                                onAnswer(question, letter.toString())
+                                question = next(question)
+                            },
+                            shape = CircleShape,
+                            color = if (current == letter.toString()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (current == letter.toString()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(52.dp).semantics { contentDescription = letter.toString() },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) { Text(letter.toString(), style = MaterialTheme.typography.titleLarge) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.key_quick_entry_done)) } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { question = (question - 1).coerceAtLeast(1) }, enabled = question > 1) { Text(stringResource(R.string.key_quick_entry_back)) }
+                TextButton(onClick = { question = next(question) }) { Text(stringResource(R.string.key_quick_entry_skip)) }
+            }
+        },
+    )
+}
+
+/** The latest search report, to read here or send to whoever is helping. */
+@Composable
+private fun ReportDialog(loadReport: suspend () -> String?, onDismiss: () -> Unit) {
+    var report by remember { mutableStateOf<String?>(null) }
+    var loaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        report = loadReport()
+        loaded = true
+    }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val shareTitle = stringResource(R.string.key_report)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.key_report)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.key_report_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        report ?: if (loaded) stringResource(R.string.key_report_none) else "…",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                report?.let { text ->
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) { Text(stringResource(R.string.key_report_copy)) }
+                    TextButton(onClick = {
+                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                        context.startActivity(Intent.createChooser(send, shareTitle))
+                    }) { Text(stringResource(R.string.key_report_share)) }
+                }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.check_dismiss)) }
+            }
+        },
+    )
 }
 
 @Composable
@@ -568,6 +701,7 @@ private fun TestCard(
     onAddAnswer: () -> Unit,
     onEditTest: () -> Unit,
     onViewSource: (() -> Unit)?,
+    onQuickEntry: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.large, color = scheme.surfaceContainerLow, border = BorderStroke(1.dp, scheme.outlineVariant)) {
@@ -610,6 +744,7 @@ private fun TestCard(
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.key_add_answer))
                 }
+                TextButton(onClick = onQuickEntry) { Text(stringResource(R.string.key_quick_entry)) }
                 if (onViewSource != null) TextButton(onClick = onViewSource) { Text(stringResource(R.string.key_view_source)) }
             }
         }
@@ -721,7 +856,10 @@ private fun AnswerDialog(
                         ('A'..'E').forEach { letter ->
                             val selected = value.equals(letter.toString(), ignoreCase = true)
                             Surface(
-                                onClick = { value = letter.toString() },
+                                // Fixing a found answer is one tap: the letter saves it.
+                                onClick = {
+                                    if (answer != null) onSave(answer.question, AnswerType.CHOICE, letter.toString(), null) else value = letter.toString()
+                                },
                                 shape = CircleShape,
                                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
                                 contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,

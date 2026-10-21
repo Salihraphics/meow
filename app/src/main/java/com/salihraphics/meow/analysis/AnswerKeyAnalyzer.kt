@@ -3,6 +3,7 @@ package com.salihraphics.meow.analysis
 import com.salihraphics.meow.analysis.key.AnswerKeyParseResult
 import com.salihraphics.meow.analysis.key.AnswerKeyParser
 import com.salihraphics.meow.analysis.key.KeySourceKind
+import com.salihraphics.meow.analysis.key.PageInspection
 import com.salihraphics.meow.analysis.key.TurkishText
 import com.salihraphics.meow.analysis.text.OcrRegion
 import com.salihraphics.meow.analysis.text.PageOcr
@@ -23,6 +24,8 @@ data class AnalysisOutcome(
     val unreadablePages: List<Int> = emptyList(),
     /** Pages read in full with OCR. */
     val ocrPages: List<Int> = emptyList(),
+    /** A short, shareable account of what was seen; see [AnswerKeyAnalyzer.report]. */
+    val report: String = "",
 ) {
     val clues: AnalysisClues
         get() = AnalysisClues(
@@ -70,20 +73,27 @@ class AnswerKeyAnalyzer(
         val ocrPages = HashMap<Int, PageText>()
 
         if (ocr != null && result.tests.none { it.kind == KeySourceKind.KEY_SECTION }) {
-            // Key pages whose answers weren't text, then the last pages (scans before the rest).
+            // In stages, stopping once a key turns up: key pages whose answers weren't text and the
+            // last scanned pages first; the last text pages (answers drawn as shapes) only if
+            // that found nothing.
             val answered = result.tests.flatMap { it.sourcePages }.toSet()
             val headings = result.clues.headingPages.filter { it !in answered }
             val tail = tailPages(pageCount)
-            // Text pages are worth OCR only when the text found no key at all (answers drawn as shapes).
-            val drawn = if (result.found) emptyList() else tail.filter { it !in textless }
-            val candidates = (headings + tail.filter { it in textless } + drawn).distinct().take(MAX_FULL_OCR_PAGES)
-            candidates.forEachIndexed { i, index ->
-                currentCoroutineContext().ensureActive()
-                ocr.read(index, OcrRegion.FULL_PAGE)?.let { ocrPages[index] = it }
-                ocrReads++
-                onProgress(0.4f + 0.3f * (i + 1) / candidates.size)
+            val firstStage = (headings + tail.filter { it in textless }).distinct().take(MAX_FULL_OCR_PAGES)
+            val secondStage = if (result.found) emptyList() else tail.filter { it !in textless && it !in firstStage }
+            var budget = MAX_FULL_OCR_PAGES
+            for ((stage, pagesToRead) in listOf(firstStage, secondStage).withIndex()) {
+                val batch = pagesToRead.take(budget)
+                if (batch.isEmpty() || (stage > 0 && result.tests.any { it.kind == KeySourceKind.KEY_SECTION })) continue
+                batch.forEachIndexed { i, index ->
+                    currentCoroutineContext().ensureActive()
+                    ocr.read(index, OcrRegion.FULL_PAGE)?.let { ocrPages[index] = it }
+                    ocrReads++
+                    onProgress(0.4f + 0.15f * stage + 0.15f * (i + 1) / batch.size)
+                }
+                budget -= batch.size
+                result = parser.parse(merged(readable, ocrPages))
             }
-            if (ocrPages.isNotEmpty()) result = parser.parse(merged(readable, ocrPages))
 
             // Still nothing: the answers may be printed in the margins of scanned pages.
             if (!result.found) {
@@ -101,7 +111,12 @@ class AnswerKeyAnalyzer(
             }
         }
         onProgress(1f)
-        return AnalysisOutcome(result, pageCount, pageCount - textless.size, ocrReads, unreadable, ocrPages.keys.sorted())
+        val used = merged(readable, ocrPages)
+        val textPages = pageCount - textless.size
+        return AnalysisOutcome(
+            result, pageCount, textPages, ocrReads, unreadable, ocrPages.keys.sorted(),
+            report(pageCount, textPages, unreadable, ocrPages.keys, used, result, ocr != null),
+        )
     }
 
     /**
@@ -137,7 +152,56 @@ class AnswerKeyAnalyzer(
         }
         onProgress(1f)
         val textPages = pages.values.count { it.characterCount >= MIN_TEXT_CHARS && it.pageIndex !in unreadable }
-        return AnalysisOutcome(result, pageCount, textPages, ocrPages.size, unreadable, ocrPages.keys.sorted())
+        return AnalysisOutcome(
+            result, pageCount, textPages, ocrPages.size, unreadable, ocrPages.keys.sorted(),
+            report(pageCount, textPages, unreadable, ocrPages.keys, merged(readable, ocrPages), result, ocr != null, pages.keys.sorted()),
+        )
+    }
+
+    /**
+     * What the search saw, in a few lines a student can copy and send: per stage counts, then
+     * the pages that looked most like a key (and every page with a key heading), each with its
+     * headings, answer-like lines, table rows and why near-miss lines were turned down. Excerpts
+     * are short and only of key-like lines; whole pages are never included.
+     */
+    private fun report(
+        pageCount: Int,
+        textPages: Int,
+        unreadable: List<Int>,
+        ocrPages: Set<Int>,
+        pages: List<PageText>,
+        result: AnswerKeyParseResult,
+        ocrAvailable: Boolean,
+        askedFor: List<Int>? = null,
+    ): String {
+        val inspected = pages.map { parser.inspect(it) }
+        val score = { i: PageInspection ->
+            i.answers + 2 * (i.numberRows + i.letterRows + i.bubbleRows) + i.rejected.size + if (i.keyHeadings.isNotEmpty()) 50 else 0
+        }
+        val shown = inspected.filter { score(it) > 0 }.sortedByDescending(score).take(MAX_REPORTED_PAGES).sortedBy { it.pageIndex }
+        fun pages(list: Collection<Int>) = if (list.isEmpty()) "-" else list.sorted().take(12).joinToString(", ") { "${it + 1}" } + if (list.size > 12) "…" else ""
+        return buildString {
+            appendLine("MEOW cevap anahtarı tanılama · sürüm $REPORT_VERSION")
+            askedFor?.let { appendLine("İstenen sayfalar: ${pages(it)}") }
+            appendLine("Sayfa: $pageCount · metni okunan: $textPages · okunamayan metin: ${unreadable.size} · OCR: ${ocrPages.size}${if (ocrAvailable) "" else " (OCR yok)"}")
+            appendLine("Anahtar başlıklı sayfalar: ${pages(result.clues.headingPages)}")
+            appendLine("Anahtar sayılan sayfalar: ${pages(result.clues.keyPages)}")
+            appendLine("Cevap satırı (tüm kitap): ${result.clues.answerLines}")
+            appendLine("Bulunan testler: ${result.tests.size}" + result.tests.take(6).joinToString("") { t ->
+                "\n  · ${t.ref?.label?.ifBlank { null } ?: "adsız"} (${t.kind}): ${t.answers.size} cevap, s. ${pages(t.sourcePages)}" +
+                    if (t.issues.isNotEmpty()) ", sorunlar: ${t.issues.joinToString { it.javaClass.simpleName }}" else ""
+            } + if (result.tests.size > 6) "\n  · …" else "")
+            if (shown.isEmpty()) appendLine("Anahtara benzeyen sayfa yok.")
+            for (i in shown) {
+                appendLine("— s. ${i.pageIndex + 1}${if (i.pageIndex in ocrPages) " (OCR)" else ""} · ${i.lines} satır${if (i.byRows) " · satır satır okundu" else ""}")
+                if (i.keyHeadings.isNotEmpty()) appendLine("  başlık: ${i.keyHeadings.joinToString(" | ")}")
+                if (i.sections.isNotEmpty()) appendLine("  gün/ünite: ${i.sections.joinToString(", ")}")
+                if (i.testHeaders.isNotEmpty()) appendLine("  testler: ${i.testHeaders.joinToString(", ")}")
+                appendLine("  cevap satırı ${i.answerLines} (${i.answers} cevap) · tablodan ${i.tableLines} · sayı satırı ${i.numberRows} · harf satırı ${i.letterRows} · balon ${i.bubbleRows}")
+                i.rejected.forEach { (line, why) -> appendLine("  reddedildi: \"$line\" → $why") }
+                i.samples.forEach { appendLine("  örnek: \"$it\"") }
+            }
+        }.trimEnd()
     }
 
     /** OCR text replaces a page's own text where both exist (it was read because the text gave nothing). */
@@ -149,6 +213,8 @@ class AnswerKeyAnalyzer(
         const val MAX_FULL_OCR_PAGES = 12
         const val MAX_MARGIN_OCR_PAGES = 400
         const val MAX_KEY_PAGES = 120
+        const val MAX_REPORTED_PAGES = 15
+        const val REPORT_VERSION = 1
 
         /** The last quarter (at least 8 pages), last page first; it's where keys usually are. */
         fun tailPages(pageCount: Int): List<Int> {

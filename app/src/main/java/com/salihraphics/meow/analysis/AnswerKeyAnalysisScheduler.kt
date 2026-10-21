@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import android.net.Uri
+import com.salihraphics.meow.data.answerkey.AnalysisReports
 import com.salihraphics.meow.data.answerkey.KeySourceFiles
 import java.io.File
 import java.io.IOException
@@ -35,6 +36,8 @@ class AnswerKeyAnalysisScheduler(
     private val ocrFor: suspend (File) -> OcrHandle?,
     /** Where separate answer-key PDFs are kept. */
     private val keyFiles: KeySourceFiles? = null,
+    /** Where each document's latest search report is kept. */
+    private val reports: AnalysisReports? = null,
 ) {
     interface OcrHandle : AutoCloseable {
         val ocr: PageOcr
@@ -101,6 +104,7 @@ class AnswerKeyAnalysisScheduler(
         val ocr = runCatching { ocrFor(file) }.getOrNull()
         try {
             val outcome = analyzer.analyzeKeyPages(file, pages, ocr?.ocr, progress)
+            reports?.save(documentId, outcome.report)
             keys.saveKeyPagesOutcome(documentId, pages, outcome)
         } finally {
             ocr?.close()
@@ -116,6 +120,7 @@ class AnswerKeyAnalysisScheduler(
         val ocr = runCatching { ocrFor(file) }.getOrNull()
         try {
             val outcome = analyzer.analyzeKeyPages(file, null, ocr?.ocr, progress)
+            reports?.save(documentId, outcome.report)
             keys.saveKeySourceOutcome(documentId, sourceId, name.orEmpty(), outcome)
         } finally {
             ocr?.close()
@@ -163,6 +168,7 @@ class AnswerKeyAnalysisScheduler(
         val ocr = runCatching { ocrFor(file) }.getOrNull()
         try {
             val outcome = analyzer.analyze(file, ocr?.ocr) { p -> _progress.update { it + (documentId to p) } }
+            reports?.save(documentId, outcome.report)
             keys.saveOutcome(documentId, hash, outcome)
         } catch (e: CancellationException) {
             throw e // left as RUNNING; picked up again on the next launch if the document remains

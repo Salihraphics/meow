@@ -33,6 +33,7 @@ import com.salihraphics.meow.feature.check.CheckOutcome
 import com.salihraphics.meow.feature.check.SessionCheck
 import com.salihraphics.meow.feature.check.SessionGrader
 import com.salihraphics.meow.domain.model.AttemptResult
+import com.salihraphics.meow.domain.model.AnswerAttempt
 import com.salihraphics.meow.domain.model.SolvingSession
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -77,14 +78,9 @@ class PdfViewerViewModel(
     private var session: PdfRenderSession? = null
 
     /** Strokes, tool and undo history; here so rotation keeps them. */
-    private val annotations = AnnotationSession(
-        documentId, annotationRepository, viewModelScope,
-        onStrokeAdded = ::onStrokeAdded,
-        // An erased (or undone) circle takes its answer with it; written on the app scope so it
-        // lands even if the screen closes right after.
-        onStrokesRemoved = { ids -> answerKeys?.let { keys -> applicationScope.launch { keys.strokesRemoved(ids) } } },
-        onStrokesRestored = { ids -> answerKeys?.let { keys -> applicationScope.launch { keys.strokesRestored(ids) } } },
-    )
+    // Answers are kept apart from drawings: erasing or undoing a circle leaves its answer saved.
+    // An answer changes by circling another option, "Geri al" on its note, or the answer sheet.
+    private val annotations = AnnotationSession(documentId, annotationRepository, viewModelScope, onStrokeAdded = ::onStrokeAdded)
 
     private val immediateFeedback: StateFlow<Boolean> = immediateFeedbackSetting.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
@@ -257,21 +253,35 @@ class PdfViewerViewModel(
         _answerCheck.value = null
     }
 
+    /** "Geri al" on a just-recorded answer: that answer is dropped (an earlier one for the question counts again). */
+    fun undoAnswer(attemptId: String) {
+        val keys = answerKeys ?: return
+        if ((_answerCheck.value as? AnswerCheckUi.Recorded)?.attemptId == attemptId) _answerCheck.value = null
+        applicationScope.launch { keys.removeAnswer(attemptId) }
+    }
+
+    /** From the answer sheet: the question is unanswered again. */
+    fun clearQuestion(attempt: AnswerAttempt) {
+        val keys = answerKeys ?: return
+        val session = solving.value ?: return
+        applicationScope.launch { keys.clearQuestion(session.id, attempt) }
+    }
+
     private suspend fun answer(page: Int, question: Int, letter: String, origin: SelectionOrigin, strokeId: String, region: FloatArray) {
         val keys = answerKeys ?: return
         val tests = keys.tests(documentId)
         val testId = AnswerChecker.testFor(page, question, tests.filter { it.answers.isNotEmpty() })?.id
         if (!immediateFeedback.value) {
-            keys.recordSelection(documentId, testId, question, page, letter, origin, strokeId, region)
-            _answerCheck.value = AnswerCheckUi.Recorded(question, letter)
+            val id = keys.recordSelection(documentId, testId, question, page, letter, origin, strokeId, region)
+            _answerCheck.value = AnswerCheckUi.Recorded(question, letter, id)
             return
         }
         val outcome = AnswerChecker.check(page, question, letter, tests)
         val result = (outcome as? CheckOutcome.Graded)?.result ?: AttemptResult.PENDING
-        keys.recordSelection(documentId, testId, question, page, letter, origin, strokeId, region, result)
+        val id = keys.recordSelection(documentId, testId, question, page, letter, origin, strokeId, region, result)
         _answerCheck.value = when (outcome) {
             is CheckOutcome.Graded -> AnswerCheckUi.Result(outcome)
-            CheckOutcome.NoKey -> AnswerCheckUi.Recorded(question, letter)
+            CheckOutcome.NoKey -> AnswerCheckUi.Recorded(question, letter, id)
             CheckOutcome.KeyNotConfirmed -> AnswerCheckUi.KeyNotConfirmed
             CheckOutcome.PageTestUnknown -> AnswerCheckUi.PageTestUnknown
             is CheckOutcome.NoAnswerForQuestion -> AnswerCheckUi.NoAnswer(outcome.question)

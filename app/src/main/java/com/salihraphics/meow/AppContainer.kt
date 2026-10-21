@@ -11,6 +11,7 @@ import com.salihraphics.meow.data.answerkey.AnswerKeyRepository
 import com.salihraphics.meow.data.account.LocalOnlyAccountRepository
 import com.salihraphics.meow.data.annotation.AnnotationRepository
 import com.salihraphics.meow.data.annotation.LocalAnnotationRepository
+import com.salihraphics.meow.data.answerkey.AnalysisReports
 import com.salihraphics.meow.data.answerkey.KeySourceFiles
 import com.salihraphics.meow.data.library.ContentResolverDocumentSource
 import com.salihraphics.meow.data.library.LocalPdfLibraryRepository
@@ -51,11 +52,17 @@ class AppContainer(context: Context) {
             source = ContentResolverDocumentSource(context.contentResolver),
             inspector = AndroidPdfInspector(),
             strokes = database.strokes(),
-            onRemoved = { id -> answerKeyRepository.removeDocument(id) },
+            onRemoved = { id ->
+                answerKeyRepository.removeDocument(id)
+                analysisReports.delete(id)
+            },
         )
     }
 
     val answerKeyRepository: AnswerKeyRepository by lazy { AnswerKeyRepository(database) }
+
+    /** The latest answer-key search report per document, for "Tanılama raporu". */
+    val analysisReports = AnalysisReports(File(context.filesDir, "keyreports"))
 
     /** Separate answer-key PDFs students add for their books. */
     val keySourceFiles = KeySourceFiles(File(context.filesDir, "keysources"), ContentResolverDocumentSource(context.contentResolver))
@@ -75,6 +82,7 @@ class AppContainer(context: Context) {
                 }
             },
             keyFiles = keySourceFiles,
+            reports = analysisReports,
         )
     }
 

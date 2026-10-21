@@ -351,4 +351,27 @@
     <string name="key_diag_no_heading">Hiçbir sayfada “Cevap anahtarı” başlığı yok.</string>
     <string name="key_diag_no_lines">Cevap satırına benzeyen bir şey de bulamadım.</string>
     <string name="key_diag_hint">Anahtarın yerini biliyorsan sayfalarını göster; oradan okumayı denerim.</string>
+
+    <!-- Review: quicker entry, the "to check" filter and the search report -->
+    <string name="key_filter_to_check">Kontrol gerekenler (%1$d test)</string>
+    <string name="key_quick_entry">Hızlı giriş</string>
+    <string name="key_quick_entry_title">%1$s · hızlı giriş</string>
+    <string name="key_quick_entry_question">Soru %1$d</string>
+    <string name="key_quick_entry_current">Şu anki cevap: %1$s</string>
+    <string name="key_quick_entry_missing">%1$d eksik soru</string>
+    <string name="key_quick_entry_done">Bitir</string>
+    <string name="key_quick_entry_back">Geri</string>
+    <string name="key_quick_entry_skip">Atla</string>
+    <string name="key_report">Tanılama raporu</string>
+    <string name="key_report_note">Anahtar aramasında ne gördüğümün özeti. Yalnızca bu cihazda; istersen kopyalayıp paylaşabilirsin. Kitabın tamamını değil, yalnızca anahtara benzeyen kısa satırları içerir.</string>
+    <string name="key_report_none">Henüz rapor yok. “Yeniden ara” ile arama yapınca burada görünür.</string>
+    <string name="key_report_copy">Kopyala</string>
+    <string name="key_report_share">Paylaş</string>
+
+    <!-- Answers separate from drawings -->
+    <string name="check_undo">Geri al</string>
+    <string name="sheet_title">Cevaplarım</string>
+    <string name="sheet_note">Henüz kontrol edilmedi. Bir cevabı değiştirmek için başka bir şıkkı daire içine al. Çizimi silmek cevabı silmez; buradan silebilirsin.</string>
+    <string name="sheet_line">Soru %1$d · %2$s · s. %3$d</string>
+    <string name="sheet_clear">Sil</string>
 </resources>

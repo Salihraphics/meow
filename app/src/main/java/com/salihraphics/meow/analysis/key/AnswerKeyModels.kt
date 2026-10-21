@@ -77,3 +77,26 @@ data class KeyClues(
     /** Lines that looked like answers ("5. C 6. A …") anywhere in the book. */
     val answerLines: Int = 0,
 )
+
+/** What the parser saw on one page; see [AnswerKeyParser.inspect]. */
+data class PageInspection(
+    val pageIndex: Int,
+    val lines: Int,
+    /** Read as whole printed rows rather than column by column. */
+    val byRows: Boolean,
+    val keyHeadings: List<String>,
+    val testHeaders: List<String>,
+    val sections: List<String>,
+    val answerLines: Int,
+    val answers: Int,
+    /** Answer lines rebuilt from tables. */
+    val tableLines: Int,
+    /** Rows of consecutive numbers, and rows of single letters (table halves). */
+    val numberRows: Int,
+    val letterRows: Int,
+    /** "1 A B C D E" rows: answers marked by shapes, not readable as text. */
+    val bubbleRows: Int,
+    /** Lines that almost looked like answers, and why they were turned down. */
+    val rejected: List<Pair<String, String>>,
+    val samples: List<String>,
+)

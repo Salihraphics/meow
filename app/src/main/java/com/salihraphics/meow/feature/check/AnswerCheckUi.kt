@@ -3,7 +3,7 @@ package com.salihraphics.meow.feature.check
 /** What the viewer shows after a mark that might be an answer. */
 sealed interface AnswerCheckUi {
     /** Saved for checking later; correctness isn't shown (the default way of solving). */
-    data class Recorded(val question: Int, val letter: String) : AnswerCheckUi
+    data class Recorded(val question: Int, val letter: String, val attemptId: String) : AnswerCheckUi
 
     /** Immediate feedback (optional setting): graded right away. */
     data class Result(val outcome: CheckOutcome.Graded) : AnswerCheckUi

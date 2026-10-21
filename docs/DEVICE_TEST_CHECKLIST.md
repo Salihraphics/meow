@@ -22,7 +22,9 @@ keys must still be there after updating.
 
 ## 2. Deferred checking
 - [ ] While circling, correctness is never shown; the bar says "N cevap işaretlendi".
-- [ ] Erase one circle (eraser) or undo it: the count drops. Redo: it comes back.
+- [ ] Erase one circle (eraser) or undo it: the drawing goes, the answer stays (count unchanged).
+- [ ] Right after a circle, "Geri al" on the "Soru N: X işaretlendi" note removes that answer.
+- [ ] Tap "N cevap işaretlendi": "Cevaplarım" lists the answers; "Sil" clears one.
 - [ ] Leave the viewer and come back (or close the app): the count is still there.
 - [ ] Tap "Testi kontrol et": correct / wrong / blank counts match the book's key; mistakes list
       "Senin cevabın … Doğrusu …"; "Sayfaya git" jumps to the page. The bar disappears.
@@ -32,9 +34,9 @@ keys must still be there after updating.
 
 ## 3. Finding the key
 - [ ] After import the library card shows "Cevap anahtarı aranıyor…", then a result.
-- [ ] For the 55 Günde book: does it find the key? If not, open the key screen and note what
-      "Neye baktım?" says (screenshot it), the PDF page numbers of the key, and how the key looks
-      (table, rows of "1.C", letters in circles, per-day sections…).
+- [ ] For the 55 Günde book: after updating, MEOW searches it again by itself (the card shows
+      "Cevap anahtarı aranıyor…"; this version reads tables differently). Does it find the key? If not, open "Tanılama raporu" and Share/Copy it to the developer, with the
+      PDF page numbers of the key and a screenshot of one key page.
 - [ ] "Anahtar hangi sayfalarda?" → enter the key's pages → "Oku". Note how many tests were found
       and whether letters are right ("Kaynağı gör" shows the page next to the answers).
 - [ ] "Ayrı anahtar PDF'i ekle" with a separate key PDF, if you have one.

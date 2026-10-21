@@ -118,4 +118,38 @@ class AnswerKeyRecoveryTest {
         val outcome = AnswerKeyAnalyzer(ScriptedText(keyPdf)).analyzeKeyPages(file, null, null)
         assertEquals(listOf("1. GÜN · TEST 1", "1. GÜN · TEST 2"), outcome.result.tests.map { it.ref?.label })
     }
+
+    @Test
+    fun aMixedPdfUsesTextWhereItCanAndOcrOnlyForItsScannedPages() = runBlocking {
+        // Questions are digital text; the key pages at the end were scanned.
+        val pages = questionPages(10) + PageText(10, emptyList(), TextSource.EMBEDDED) + PageText(11, emptyList(), TextSource.EMBEDDED)
+        val ocr = ScriptedOcr(mapOf(10 to keyByOcr(10)))
+        val outcome = AnswerKeyAnalyzer(ScriptedText(pages)).analyze(file, ocr)
+        assertEquals(10, outcome.textPages)
+        assertEquals(setOf(11, 10), ocr.reads.map { it.first }.toSet()) // only the scanned pages
+        assertEquals(listOf("CADB", "EBAC"), outcome.result.tests.map { t -> t.answers.joinToString("") { it.answer } })
+        assertEquals(listOf(0, 1), outcome.result.tests.first().questionPages)
+    }
+
+    @Test
+    fun theReportSaysWhatWasSeenAndWhyLinesWereTurnedDown() = runBlocking {
+        val pages = questionPages(6) + BookFixtures.page(
+            6, L("CEVAP ANAHTARI", 0.05f), L("TEST 1", 0.1f),
+            // Answers mixed with commentary: rejected, and the report says why.
+            L("1. C çünkü x büyüktür ve 2. A olduğu için toplam artar", 0.15f),
+            L("1 A B C D E", 0.2f), L("2 A B C D E", 0.24f),
+        )
+        val outcome = AnswerKeyAnalyzer(ScriptedText(pages)).analyze(file, null)
+        val report = outcome.report
+        assertFalse(outcome.result.found)
+        assertTrue(report, report.contains("Anahtar başlıklı sayfalar: 7"))
+        assertTrue(report, report.contains("— s. 7"))
+        assertTrue(report, report.contains("başlık: CEVAP ANAHTARI"))
+        assertTrue(report, report.contains("testler: TEST 1"))
+        assertTrue(report, report.contains("balon 2"))
+        assertTrue(report, report.contains("reddedildi: \"1. C çünkü"))
+        assertTrue(report, report.contains("(OCR yok)"))
+        // Short: never the whole book.
+        assertTrue(report.lines().size < 40 && report.lines().all { it.length < 200 })
+    }
 }

@@ -20,7 +20,9 @@ import com.salihraphics.meow.feature.library.LibraryActions
 import com.salihraphics.meow.feature.library.LibraryContent
 import com.salihraphics.meow.feature.library.LibraryMessage
 import com.salihraphics.meow.feature.library.LibraryUiState
+import com.salihraphics.meow.domain.model.AnswerAttempt
 import com.salihraphics.meow.domain.model.AttemptResult
+import com.salihraphics.meow.domain.model.SelectionOrigin
 import com.salihraphics.meow.feature.check.AnswerCheckUi
 import com.salihraphics.meow.feature.check.CheckOutcome
 import com.salihraphics.meow.feature.check.GradedQuestion
@@ -141,11 +143,15 @@ class LibraryViewerScreenshotTest {
     )
     @Test @Config(qualifiers = PHONE) fun recordedWithSessionBar() = viewer(
         "phone_recorded_session_bar", annotated(AnnotationTool.PEN),
-        answers = ViewerAnswers(AnswerCheckUi.Recorded(4, "C"), answered = 7),
+        answers = ViewerAnswers(AnswerCheckUi.Recorded(4, "C", "a4"), recorded = sampleAnswers(7)),
     )
     @Test @Config(qualifiers = TABLET_LANDSCAPE) fun sessionBarTablet() = viewer(
-        "tablet_session_bar", annotated(AnnotationTool.PEN), answers = ViewerAnswers(answered = 12),
+        "tablet_session_bar", annotated(AnnotationTool.PEN), answers = ViewerAnswers(recorded = sampleAnswers(12)),
     )
+
+    private fun sampleAnswers(count: Int) = (1..count).map { q ->
+        AnswerAttempt("a$q", "1", "t1", q, q / 4, "ABCDE"[q % 5].toString(), SelectionOrigin.RECOGNIZED, AttemptResult.PENDING, "s$q", q.toLong())
+    }
 
     private val checked = SessionCheck.Checked(
         TestResult(

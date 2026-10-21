@@ -101,7 +101,10 @@ data class AnswerAttemptEntity(
     val deletedAt: Long?,
     /** The solving session it was recorded in; null for attempts saved before sessions existed. */
     @ColumnInfo(defaultValue = "NULL") val sessionId: String? = null,
-    /** Its circle was erased or undone, so it doesn't count (undo of that brings it back). */
+    /**
+     * Unused since answers were made independent of drawings (erasing a circle keeps its answer);
+     * kept so the v4 schema stays as installed.
+     */
     @ColumnInfo(defaultValue = "0") val strokeRemoved: Boolean = false,
 )
 
