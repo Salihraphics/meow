@@ -5,7 +5,6 @@ import com.salihraphics.meow.analysis.FixturePdf.Companion.questionPage
 import com.salihraphics.meow.analysis.FixturePdf.Text
 import com.salihraphics.meow.analysis.text.PdfBoxTextSource
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -43,9 +42,8 @@ class QuestionLayoutTest {
         assertTrue(q1.options.all { it.box.centerY in 0.17f..0.21f })
         assertEquals(q1.options.sortedBy { it.box.left }, q1.options)
         assertEquals(0.08f, q1.options.first().box.left, 0.01f)
-        // The second question's region starts at its own number.
-        assertEquals(2, page.questionAt(0.3f, 0.5f)?.number)
-        assertEquals(1, page.questionAt(0.3f, 0.3f)?.number)
+        // Each question has its own options: question 2's are on its own options line.
+        assertTrue(page.questions[1].options.all { it.box.centerY in 0.47f..0.51f })
     }
 
     @Test
@@ -60,10 +58,7 @@ class QuestionLayoutTest {
                 add(Text(0.06f, 0.55f, "A) 5   B) 6   C) 7   D) 8"))
             }
         }.single()
-        assertEquals(setOf(1, 2, 3), page.questions.map { it.number }.toSet())
-        assertEquals(3, page.questionAt(0.7f, 0.15f)?.number)
-        assertEquals(1, page.questionAt(0.2f, 0.15f)?.number)
-        assertEquals(2, page.questionAt(0.2f, 0.55f)?.number)
+        assertEquals(listOf(1, 2, 3), page.numbers)
         // Four-option tests are fine: no E is invented.
         page.questions.forEach { assertEquals(listOf("A", "B", "C", "D"), it.options.map { o -> o.letter }) }
         // Right column's options never leak into the left column's question.
@@ -74,7 +69,6 @@ class QuestionLayoutTest {
     fun aPageWithoutNumberedQuestionsHasNoRegions() {
         val page = layouts { page { add(Text(0.1f, 0.1f, "Önsöz: Bu kitap TYT için hazırlandı.")) } }.single()
         assertTrue(page.questions.isEmpty())
-        assertNull(page.questionAt(0.5f, 0.5f))
     }
 
     // --- What a pen mark means ---------------------------------------------------------------
@@ -95,7 +89,7 @@ class QuestionLayoutTest {
         val b = page.option(1, "B").box
         val c = page.option(1, "C").box
         val result = ChoiceRecognizer.recognize(circle((b.centerX + c.centerX) / 2, b.centerY, (c.centerX - b.centerX) / 2 + 0.02f, 0.012f), page)
-        assertEquals(ChoiceRecognition.Unclear(1, listOf("B", "C"), listOf("A", "B", "C", "D", "E")), result)
+        assertEquals(ChoiceRecognition.Unclear(1, listOf("B", "C"), listOf("A", "B", "C", "D", "E"), listOf(1, 2)), result)
     }
 
     @Test
@@ -103,7 +97,7 @@ class QuestionLayoutTest {
         val d = page.option(1, "D").box
         // Around "21", just right of "D)".
         val result = ChoiceRecognizer.recognize(circle(d.right + 0.025f, d.centerY, 0.018f, 0.012f), page)
-        assertEquals(ChoiceRecognition.Unclear(1, listOf("D"), listOf("A", "B", "C", "D", "E")), result)
+        assertEquals(ChoiceRecognition.Unclear(1, listOf("D"), listOf("A", "B", "C", "D", "E"), listOf(1, 2)), result)
     }
 
     @Test

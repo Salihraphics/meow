@@ -7,6 +7,9 @@ import androidx.compose.runtime.remember
 import com.salihraphics.meow.feature.annotation.AnnotationToolbar
 import com.salihraphics.meow.feature.check.AnswerCheckCard
 import com.salihraphics.meow.feature.check.AnswerCheckUi
+import com.salihraphics.meow.feature.check.SessionBar
+import com.salihraphics.meow.feature.check.SessionCheck
+import com.salihraphics.meow.feature.check.SessionCheckDialog
 import androidx.compose.material.icons.filled.CheckCircle
 import com.salihraphics.meow.feature.annotation.PageAnnotationLayer
 import kotlinx.coroutines.delay
@@ -84,18 +87,45 @@ import kotlin.math.roundToInt
 fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit, onOpenAnswerKey: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val answerCheck by viewModel.answerCheck.collectAsStateWithLifecycle()
+    val solving by viewModel.solving.collectAsStateWithLifecycle()
+    val sessionCheck by viewModel.sessionCheck.collectAsStateWithLifecycle()
     PdfViewerContent(
         state = state,
         initialViewport = viewModel::initialViewport,
         onViewportChanged = viewModel::onViewportChanged,
         onPageChanged = viewModel::onPageChanged,
         onBack = onBack,
-        answerCheck = answerCheck,
-        onChooseOption = viewModel::chooseOption,
-        onDismissCheck = viewModel::dismissAnswerCheck,
-        onOpenAnswerKey = onOpenAnswerKey,
+        answers = ViewerAnswers(answerCheck, solving?.latest?.size ?: 0, sessionCheck),
+        answerActions = ViewerAnswerActions(
+            onChooseOption = viewModel::chooseOption,
+            onChooseQuestion = viewModel::chooseQuestion,
+            onDismissCheck = viewModel::dismissAnswerCheck,
+            onCheckTest = viewModel::checkTest,
+            onDismissSessionCheck = viewModel::dismissSessionCheck,
+            onAssignTest = viewModel::assignPagesToTest,
+            onOpenAnswerKey = onOpenAnswerKey,
+        ),
     )
 }
+
+/** Answer marking state shown over the pages. */
+data class ViewerAnswers(
+    val check: AnswerCheckUi? = null,
+    /** Answers collected and not yet checked. */
+    val answered: Int = 0,
+    val sessionCheck: SessionCheck? = null,
+)
+
+class ViewerAnswerActions(
+    val onChooseOption: (String) -> Unit = {},
+    val onChooseQuestion: (Int) -> Unit = {},
+    val onDismissCheck: () -> Unit = {},
+    val onCheckTest: () -> Unit = {},
+    val onDismissSessionCheck: () -> Unit = {},
+    val onAssignTest: (String, List<Int>) -> Unit = { _, _ -> },
+    /** Opens this document's answer key; null hides the action. */
+    val onOpenAnswerKey: (() -> Unit)? = null,
+)
 
 @Composable
 fun PdfViewerContent(
@@ -104,11 +134,8 @@ fun PdfViewerContent(
     onViewportChanged: (ViewportSnapshot) -> Unit,
     onPageChanged: (Int) -> Unit,
     onBack: () -> Unit,
-    answerCheck: AnswerCheckUi? = null,
-    onChooseOption: (String) -> Unit = {},
-    onDismissCheck: () -> Unit = {},
-    /** Opens this document's answer key; null hides the action. */
-    onOpenAnswerKey: (() -> Unit)? = null,
+    answers: ViewerAnswers = ViewerAnswers(),
+    answerActions: ViewerAnswerActions = ViewerAnswerActions(),
 ) {
     Column(
         Modifier
@@ -130,10 +157,7 @@ fun PdfViewerContent(
                 ViewerTopBar(title = "", onBack = onBack)
                 ViewerErrorMessage(state.error, onBack)
             }
-            is ViewerUiState.Ready -> ReadyViewer(
-                state, initialViewport, onViewportChanged, onPageChanged, onBack,
-                answerCheck, onChooseOption, onDismissCheck, onOpenAnswerKey,
-            )
+            is ViewerUiState.Ready -> ReadyViewer(state, initialViewport, onViewportChanged, onPageChanged, onBack, answers, answerActions)
         }
     }
 }
@@ -145,10 +169,8 @@ private fun ReadyViewer(
     onViewportChanged: (ViewportSnapshot) -> Unit,
     onPageChanged: (Int) -> Unit,
     onBack: () -> Unit,
-    answerCheck: AnswerCheckUi?,
-    onChooseOption: (String) -> Unit,
-    onDismissCheck: () -> Unit,
-    onOpenAnswerKey: (() -> Unit)?,
+    answers: ViewerAnswers,
+    actions: ViewerAnswerActions,
 ) {
     // Phone and side-panel layouts share this one state, so switching between them on
     // rotation keeps the position too.
@@ -173,14 +195,18 @@ private fun ReadyViewer(
     }
     val toolbar = @Composable {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            answerCheck?.let { check ->
+            answers.check?.let { check ->
                 AnswerCheckCard(
                     check = check,
-                    onChoose = onChooseOption,
-                    onDismiss = onDismissCheck,
-                    onOpenKey = { onDismissCheck(); onOpenAnswerKey?.invoke() },
+                    onChoose = actions.onChooseOption,
+                    onChooseQuestion = actions.onChooseQuestion,
+                    onDismiss = actions.onDismissCheck,
+                    onOpenKey = { actions.onDismissCheck(); actions.onOpenAnswerKey?.invoke() },
                     modifier = Modifier.padding(bottom = 10.dp),
                 )
+            }
+            if (answers.answered > 0 && answers.check !is AnswerCheckUi.Ask) {
+                SessionBar(answers.answered, actions.onCheckTest, Modifier.padding(bottom = 10.dp))
             }
             TwoFingerHint(visible = drawing)
             AnnotationToolbar(
@@ -200,8 +226,8 @@ private fun ReadyViewer(
         onBack = onBack,
         actions = {
             if (!sidePanel) ZoomButtons(viewport)
-            if (onOpenAnswerKey != null) {
-                IconButton(onClick = onOpenAnswerKey) {
+            actions.onOpenAnswerKey?.let { openKey ->
+                IconButton(onClick = openKey) {
                     Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.answer_key_title))
                 }
             }
@@ -244,6 +270,19 @@ private fun ReadyViewer(
                 toolbar()
             }
         }
+    }
+
+    answers.sessionCheck?.let { check ->
+        SessionCheckDialog(
+            check = check,
+            onDismiss = actions.onDismissSessionCheck,
+            onOpenKey = { actions.onDismissSessionCheck(); actions.onOpenAnswerKey?.invoke() },
+            onGoToPage = { page ->
+                actions.onDismissSessionCheck()
+                scope.launch { viewport.goToPage(page) }
+            },
+            onAssignTest = actions.onAssignTest,
+        )
     }
 
     if (askingPage) {

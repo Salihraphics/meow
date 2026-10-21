@@ -11,6 +11,7 @@ import com.salihraphics.meow.data.answerkey.AnswerKeyRepository
 import com.salihraphics.meow.data.account.LocalOnlyAccountRepository
 import com.salihraphics.meow.data.annotation.AnnotationRepository
 import com.salihraphics.meow.data.annotation.LocalAnnotationRepository
+import com.salihraphics.meow.data.answerkey.KeySourceFiles
 import com.salihraphics.meow.data.library.ContentResolverDocumentSource
 import com.salihraphics.meow.data.library.LocalPdfLibraryRepository
 import com.salihraphics.meow.data.library.PdfFileStore
@@ -56,6 +57,9 @@ class AppContainer(context: Context) {
 
     val answerKeyRepository: AnswerKeyRepository by lazy { AnswerKeyRepository(database) }
 
+    /** Separate answer-key PDFs students add for their books. */
+    val keySourceFiles = KeySourceFiles(File(context.filesDir, "keysources"), ContentResolverDocumentSource(context.contentResolver))
+
     /** Searches every library PDF for answer keys in the background; see [AnswerKeyAnalyzer]. */
     val answerKeyScheduler: AnswerKeyAnalysisScheduler by lazy {
         AnswerKeyAnalysisScheduler(
@@ -70,6 +74,7 @@ class AppContainer(context: Context) {
                     override fun close() = session.close()
                 }
             },
+            keyFiles = keySourceFiles,
         )
     }
 

@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.captureScreenRoboImage
 import com.salihraphics.meow.core.designsystem.theme.MeowTheme
 import com.salihraphics.meow.domain.model.PdfImportError
 import com.salihraphics.meow.feature.library.LibraryActions
@@ -22,7 +23,12 @@ import com.salihraphics.meow.feature.library.LibraryUiState
 import com.salihraphics.meow.domain.model.AttemptResult
 import com.salihraphics.meow.feature.check.AnswerCheckUi
 import com.salihraphics.meow.feature.check.CheckOutcome
+import com.salihraphics.meow.feature.check.GradedQuestion
+import com.salihraphics.meow.feature.check.SessionCheck
+import com.salihraphics.meow.feature.check.TestResult
 import com.salihraphics.meow.feature.viewer.PdfPageLoader
+import com.salihraphics.meow.feature.viewer.ViewerAnswerActions
+import com.salihraphics.meow.feature.viewer.ViewerAnswers
 import com.salihraphics.meow.feature.viewer.PdfViewerContent
 import com.salihraphics.meow.feature.viewer.ViewerError
 import com.salihraphics.meow.feature.viewer.ViewerUiState
@@ -64,7 +70,7 @@ class LibraryViewerScreenshotTest {
 
     private val thumbnails: suspend (com.salihraphics.meow.domain.model.PdfDocument) -> ImageBitmap? = { syntheticPage(240) }
 
-    private fun shoot(name: String, dark: Boolean = false, content: @Composable () -> Unit) {
+    private fun shoot(name: String, dark: Boolean = false, wholeScreen: Boolean = false, content: @Composable () -> Unit) {
         rule.setContent {
             MeowTheme(darkTheme = dark, mascotAnimationsEnabled = false) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { content() }
@@ -72,17 +78,19 @@ class LibraryViewerScreenshotTest {
         }
         rule.mainClock.advanceTimeBy(800)
         rule.waitForIdle()
-        rule.onRoot().captureRoboImage("build/outputs/roborazzi/pdf/$name.png")
+        // Dialogs are windows of their own; capture everything on screen for those.
+        if (wholeScreen) captureScreenRoboImage("build/outputs/roborazzi/pdf/$name.png")
+        else rule.onRoot().captureRoboImage("build/outputs/roborazzi/pdf/$name.png")
     }
 
     private fun library(name: String, documents: List<com.salihraphics.meow.domain.model.PdfDocument>?, state: LibraryUiState = LibraryUiState(), dark: Boolean = false) =
         shoot(name, dark) { LibraryContent(documents, state, thumbnails, LibraryActions()) }
 
-    private fun viewer(name: String, state: ViewerUiState, dark: Boolean = false, check: AnswerCheckUi? = null) =
-        shoot(name, dark) {
+    private fun viewer(name: String, state: ViewerUiState, dark: Boolean = false, check: AnswerCheckUi? = null, answers: ViewerAnswers = ViewerAnswers(check)) =
+        shoot(name, dark, wholeScreen = answers.sessionCheck != null) {
             PdfViewerContent(
                 state, initialViewport = { ViewportSnapshot(0) }, onViewportChanged = {}, onPageChanged = {}, onBack = {},
-                answerCheck = check, onOpenAnswerKey = {},
+                answers = answers, answerActions = ViewerAnswerActions(onOpenAnswerKey = {}),
             )
         }
 
@@ -125,8 +133,36 @@ class LibraryViewerScreenshotTest {
         viewer("phone_check_incorrect_dark", annotated(AnnotationTool.PEN), dark = true, check = graded(AttemptResult.INCORRECT, "B"))
     @Test @Config(qualifiers = PHONE) fun checkAsk() = viewer(
         "phone_check_ask", annotated(AnnotationTool.PEN),
-        check = AnswerCheckUi.Ask(4, listOf("B", "C"), listOf("A", "B", "C", "D", "E"), 0, "s", listOf(0.2f, 0.3f, 0.3f, 0.32f)),
+        check = AnswerCheckUi.Ask(4, listOf("B", "C"), listOf("A", "B", "C", "D", "E"), emptyList(), 0, "s", listOf(0.2f, 0.3f, 0.3f, 0.32f)),
     )
+    @Test @Config(qualifiers = PHONE) fun checkAskQuestion() = viewer(
+        "phone_check_ask_question", annotated(AnnotationTool.PEN),
+        check = AnswerCheckUi.Ask(null, listOf("C"), listOf("A", "B", "C", "D", "E"), (listOf(3, 4) + (1..16)).distinct(), 0, "s", listOf(0.2f, 0.3f, 0.3f, 0.32f)),
+    )
+    @Test @Config(qualifiers = PHONE) fun recordedWithSessionBar() = viewer(
+        "phone_recorded_session_bar", annotated(AnnotationTool.PEN),
+        answers = ViewerAnswers(AnswerCheckUi.Recorded(4, "C"), answered = 7),
+    )
+    @Test @Config(qualifiers = TABLET_LANDSCAPE) fun sessionBarTablet() = viewer(
+        "tablet_session_bar", annotated(AnnotationTool.PEN), answers = ViewerAnswers(answered = 12),
+    )
+
+    private val checked = SessionCheck.Checked(
+        TestResult(
+            (1..16).map { q ->
+                val selected = when (q) { 4 -> "B"; 9 -> "E"; 13, 15 -> null; else -> "C" }
+                val correct = when (q) { 4 -> "D"; 9 -> "A"; else -> "C" }
+                GradedQuestion(
+                    "t1", "Test 3", q, selected, correct,
+                    selected?.let { if (it == correct) AttemptResult.CORRECT else AttemptResult.INCORRECT },
+                    if (selected != null) 40 + q / 5 else null, "a$q",
+                )
+            },
+        ),
+        notInKey = emptyList(),
+    )
+    @Test @Config(qualifiers = PHONE) fun results() = viewer("phone_results", annotated(null), answers = ViewerAnswers(sessionCheck = checked))
+    @Test @Config(qualifiers = PHONE) fun resultsDark() = viewer("phone_results_dark", annotated(null), dark = true, answers = ViewerAnswers(sessionCheck = checked))
     @Test @Config(qualifiers = TABLET_LANDSCAPE) fun checkTabletNotConfirmed() =
         viewer("tablet_check_not_confirmed", annotated(AnnotationTool.PEN), check = AnswerCheckUi.KeyNotConfirmed)
 }

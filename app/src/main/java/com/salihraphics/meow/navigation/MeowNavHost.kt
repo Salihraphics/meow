@@ -4,6 +4,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -113,11 +114,27 @@ fun MeowNavHost(
                             keys = container.answerKeyRepository,
                             progress = container.answerKeyScheduler.progress,
                             searchAgainAction = { container.answerKeyScheduler.enqueue(documentId, force = true) },
+                            requests = container.answerKeyScheduler.requests,
+                            readKeyPagesAction = { pages -> container.answerKeyScheduler.readKeyPages(documentId, pages) },
+                            readKeyPdfAction = { uri -> container.answerKeyScheduler.readKeyPdf(documentId, uri) },
+                            clearRequestAction = { container.answerKeyScheduler.clearRequest(documentId) },
                         )
                     }
                 },
             )
-            AnswerKeyRoute(vm, onBack = { navController.popBackStack() })
+            AnswerKeyRoute(
+                vm,
+                onBack = { navController.popBackStack() },
+                pagePreview = { sourceId, pageIndex ->
+                    val file = if (sourceId == documentId) container.pdfLibraryRepository.pdfFile(documentId) else container.keySourceFiles.file(sourceId)
+                    val session = container.pdfRenderSessionFactory.open(file)
+                    try {
+                        session.render(pageIndex, PREVIEW_WIDTH_PX).asImageBitmap()
+                    } finally {
+                        session.close()
+                    }
+                },
+            )
         }
         composable(
             MeowDestinations.VIEWER,
@@ -138,6 +155,7 @@ fun MeowNavHost(
                             layoutSourceFactory = { file, session ->
                                 PdfPageLayoutSource(file, container.pdfTextSource, MlKitPageOcr(session))
                             },
+                            immediateFeedbackSetting = repository.preferences.map { it.immediateFeedback },
                         )
                     }
                 },
@@ -158,6 +176,8 @@ fun MeowNavHost(
         }
     }
 }
+
+private const val PREVIEW_WIDTH_PX = 1200
 
 /** Navigates to [route] and clears the back stack, so Back never returns to a finished flow. */
 private fun NavHostController.replaceAllWith(route: String) {

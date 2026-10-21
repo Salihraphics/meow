@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.salihraphics.meow.core.designsystem.theme.MeowTheme
+import com.salihraphics.meow.domain.model.AnalysisClues
 import com.salihraphics.meow.domain.model.AnalysisInfo
 import com.salihraphics.meow.domain.model.AnalysisStatus
 import com.salihraphics.meow.domain.model.AnswerConfidence
@@ -79,7 +80,17 @@ class AnswerKeyScreenshotTest {
     @Test @Config(qualifiers = "w393dp-h852dp-xhdpi") fun reviewPhoneDark() = shoot("phone_review_dark", found, dark = true)
     @Test @Config(qualifiers = "w1280dp-h800dp-land-mdpi") fun reviewTablet() = shoot("tablet_review", found)
     @Test @Config(qualifiers = "w393dp-h852dp-xhdpi") fun notFound() =
-        shoot("phone_not_found", AnswerKeyUiState("Paragraf 50 Günde", 64, KeyStatus.NotFound, analysis.copy(keyFound = false, textPages = 0, ocrReads = 12), emptyList()))
+        shoot(
+            "phone_not_found",
+            AnswerKeyUiState(
+                "55 Günde TYT Matematik", 240, KeyStatus.NotFound,
+                analysis.copy(
+                    keyFound = false, pageCount = 240, textPages = 236, ocrReads = 12,
+                    clues = AnalysisClues(headingPages = listOf(229, 230), scannedPages = 4, ocrPages = listOf(239, 238, 229, 230)),
+                ),
+                emptyList(),
+            ),
+        )
     @Test @Config(qualifiers = "w393dp-h852dp-xhdpi") fun searching() =
         shoot("phone_searching", AnswerKeyUiState("AYT Fizik Deneme 3", 48, KeyStatus.Searching(0.4f), null, emptyList()))
 }

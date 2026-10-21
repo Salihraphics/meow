@@ -148,7 +148,7 @@
     <string name="viewer_info_pages">%1$d sayfa · %2$s</string>
     <string name="viewer_info_imported">Eklenme: %1$s</string>
     <string name="viewer_next_steps_heading">Cevap işaretleme</string>
-    <string name="viewer_next_steps_body">Kalemle bir şıkkı daire içine al. Bu PDF\'in cevap anahtarı onaylıysa MEOW cevabını kontrol eder; emin olamazsa sana sorar. PDF\'in kendisi değişmez.</string>
+    <string name="viewer_next_steps_body">Kalemle bir şıkkı daire içine al; cevabını kaydederim, emin olamazsam sorarım. Testi bitirince “Testi kontrol et”e dokun, doğru, yanlış ve boşlarını birlikte görelim. PDF\'in kendisi değişmez.</string>
 
     <!-- Annotation -->
     <string name="annotation_toolbar">Çizim araçları</string>
@@ -175,7 +175,7 @@
     <string name="key_status_not_found">Cevap anahtarı bulunamadı</string>
     <string name="key_status_failed">Cevap anahtarı aranamadı</string>
     <string name="key_searching_body">PDF\'in sayfalarına bakıyorum. Sonuna, sayfa altlarına ve test başlıklarına göz atıyorum.</string>
-    <string name="key_not_found_body">Bu PDF\'de güvenilir bir cevap anahtarı bulamadım. Tahmin yürütmek yerine sana soruyorum: istersen cevapları kendin girebilirsin.</string>
+    <string name="key_not_found_body">Bu PDF\'de güvenilir bir cevap anahtarı bulamadım. Tahmin yürütmek yerine sana soruyorum: anahtarın hangi sayfalarda olduğunu gösterebilir ya da ayrı bir anahtar PDF\'i ekleyebilirsin.</string>
     <string name="key_failed_body">PDF okunurken bir sorun çıktı. Tekrar deneyebilir ya da cevapları kendin girebilirsin.</string>
     <string name="key_found_body">Bulduklarımı kontrol et. Onayladığında işaretlediğin cevapları bunlarla karşılaştırırım.</string>
     <string name="key_confirmed_body">Onaylandı. PDF\'de bir şıkkı yuvarlak içine aldığında cevabını kontrol ederim.</string>
@@ -291,4 +291,64 @@
     <string name="mascot_test_done">Bitirdin! Biraz mola hak ettin.</string>
     <string name="mascot_idle_sleep">Zzz…</string>
     <string name="cd_mascot">MEOW, siyah kedi arkadaşın</string>
+
+    <!-- Solving and checking a test -->
+    <string name="settings_section_solving">Soru çözme</string>
+    <string name="settings_immediate_feedback">Cevabı hemen göster</string>
+    <string name="settings_immediate_feedback_desc">Açıksa bir şıkkı işaretlediğinde doğru mu yanlış mı hemen söylerim. Kapalıyken cevaplarını toplarım, testi bitirince birlikte kontrol ederiz.</string>
+    <string name="check_recorded">Soru %1$d: %2$s işaretlendi</string>
+    <string name="check_which_question">Bu işaret hangi soru için?</string>
+    <string name="session_answers">%1$d cevap işaretlendi</string>
+    <string name="session_check">Testi kontrol et</string>
+    <string name="result_title">Test sonucu</string>
+    <string name="result_correct">Doğru</string>
+    <string name="result_incorrect">Yanlış</string>
+    <string name="result_blank">Boş</string>
+    <string name="result_self_check">Kendin kontrol et</string>
+    <string name="result_mistakes">Yanlışların</string>
+    <string name="result_blanks">Boş bıraktıkların</string>
+    <string name="result_mistake_line">Soru %1$d · Senin cevabın %2$s · Doğrusu %3$s</string>
+    <string name="result_blank_line">Soru %1$d · Doğrusu %2$s</string>
+    <string name="result_not_in_key">Anahtarda cevabı olmayan sorular: %1$s</string>
+    <string name="result_go_to_page">Sayfaya git</string>
+    <string name="result_all_correct">Hepsi doğru, harika!</string>
+    <string name="result_cheer">Yanlışlarına bir göz at; her biri bir sonraki teste hazırlık.</string>
+    <string name="result_test_header">%1$s · %2$d/%3$d</string>
+    <string name="check_nothing">Henüz işaretlenmiş bir cevap yok. Bir şıkkı kalemle daire içine al.</string>
+    <string name="check_blocked_not_confirmed">Cevaplarını kontrol etmem için önce cevap anahtarını onaylaman gerekiyor. Cevapların kayıtlı, kaybolmaz.</string>
+    <string name="check_blocked_no_key">Bu PDF için henüz bir cevap anahtarı yok. Anahtarı ekleyince cevaplarını kontrol ederim; cevapların kayıtlı.</string>
+    <string name="check_blocked_test_unknown">Bu sayfalardaki sorular hangi teste ait? (s. %1$s)</string>
+
+    <!-- Finding the key with the student's help -->
+    <string name="key_find_pages">Anahtar hangi sayfalarda?</string>
+    <string name="key_find_pages_more">Anahtar sayfası göster</string>
+    <string name="key_add_pdf">Ayrı anahtar PDF\'i ekle</string>
+    <string name="key_manual">Elle gir</string>
+    <string name="key_pages_dialog_title">Cevap anahtarının sayfaları</string>
+    <string name="key_pages_dialog_body">Görüntüleyicide altta yazan sayfa numaralarını gir (1–%1$d). Bu sayfaları anahtar olarak okurum; gerekirse görüntüden (OCR).</string>
+    <string name="key_pages_from">İlk sayfa</string>
+    <string name="key_pages_to">Son sayfa</string>
+    <string name="key_pages_read">Oku</string>
+    <string name="key_request_running">Anahtar okunuyor…</string>
+    <string name="key_request_done">%1$d test buldum. Cevapları kontrol et, sonra onayla.</string>
+    <string name="key_request_none">Burada okunabilir cevap bulamadım. Başka sayfaları deneyebilir ya da cevapları elle girebilirsin.</string>
+    <string name="key_request_not_pdf">Seçtiğin dosya bir PDF değil.</string>
+    <string name="key_request_no_access">Dosyaya erişilemedi. Tekrar seçmeyi dene.</string>
+    <string name="key_request_unreadable">Dosya okunamadı.</string>
+    <string name="key_source_in_test">Test sonundaki cevap tablosu: %1$s</string>
+    <string name="key_source_pdf">%1$s (ayrı anahtar PDF\'i): %2$s</string>
+    <string name="key_source_pdf_untitled">Anahtar PDF\'i</string>
+    <string name="key_view_source">Kaynağı gör</string>
+    <string name="key_preview_title">%1$s · s. %2$d</string>
+    <string name="key_preview_failed">Sayfa gösterilemedi.</string>
+    <string name="key_preview_previous">Önceki kaynak sayfa</string>
+    <string name="key_preview_next">Sonraki kaynak sayfa</string>
+    <string name="key_diag_title">Neye baktım?</string>
+    <string name="key_diag_text">%1$d sayfanın %2$d tanesinde PDF\'in kendi yazısını okudum.</string>
+    <string name="key_diag_scanned">%1$d sayfa taranmış görünüyor; %2$d tanesini görüntüden (OCR) okudum.</string>
+    <string name="key_diag_unreadable">%1$d sayfada PDF\'in yazısı bozuk çıktı (yazı tipi sorunu); bunları görüntü olarak ele aldım.</string>
+    <string name="key_diag_headings">“Cevap anahtarı” başlığını şu sayfalarda buldum ama cevapları okuyamadım: %1$s. Cevaplar resim ya da şekil olarak basılmış olabilir.</string>
+    <string name="key_diag_no_heading">Hiçbir sayfada “Cevap anahtarı” başlığı yok.</string>
+    <string name="key_diag_no_lines">Cevap satırına benzeyen bir şey de bulamadım.</string>
+    <string name="key_diag_hint">Anahtarın yerini biliyorsan sayfalarını göster; oradan okumayı denerim.</string>
 </resources>

@@ -9,7 +9,7 @@ enum class AnswerConfidence { HIGH, LOW }
 
 enum class KeyTestStatus { DETECTED, CONFIRMED }
 
-enum class KeyTestKind { KEY_SECTION, PAGE_MARGIN, MANUAL }
+enum class KeyTestKind { KEY_SECTION, PAGE_MARGIN, IN_TEST, MANUAL }
 
 enum class AnalysisStatus { PENDING, RUNNING, DONE, FAILED }
 
@@ -22,7 +22,47 @@ data class AnalysisInfo(
     val ocrReads: Int,
     val finishedAt: Long?,
     val error: String?,
+    val clues: AnalysisClues = AnalysisClues(),
 )
+
+/**
+ * What the key search saw, so a miss can be explained and acted on. Page indexes are 0-based.
+ */
+data class AnalysisClues(
+    /** Pages with a heading like "Cevap Anahtarı". */
+    val headingPages: List<Int> = emptyList(),
+    /** Pages read as answer-key pages. */
+    val keyPages: List<Int> = emptyList(),
+    /** Lines that looked like answers anywhere. */
+    val answerLines: Int = 0,
+    /** Pages whose embedded text was unreadable (fonts without a character map). */
+    val unreadablePages: List<Int> = emptyList(),
+    /** Pages with no usable text at all (scans), counting unreadable ones. */
+    val scannedPages: Int = 0,
+    /** Pages read in full with OCR. */
+    val ocrPages: List<Int> = emptyList(),
+) {
+    fun encode(): String = listOf(
+        "h=" + headingPages.joinToString(","),
+        "k=" + keyPages.joinToString(","),
+        "l=$answerLines",
+        "u=" + unreadablePages.joinToString(","),
+        "s=$scannedPages",
+        "o=" + ocrPages.joinToString(","),
+    ).joinToString(";")
+
+    companion object {
+        fun decode(text: String?): AnalysisClues {
+            if (text.isNullOrBlank()) return AnalysisClues()
+            val parts = text.split(';').mapNotNull { part -> part.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+            fun pages(key: String) = parts[key].orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
+            return AnalysisClues(pages("h"), pages("k"), parts["l"]?.toIntOrNull() ?: 0, pages("u"), parts["s"]?.toIntOrNull() ?: 0, pages("o"))
+        }
+    }
+}
+
+/** A separate answer-key PDF added for a book. */
+data class KeySource(val id: String, val displayName: String, val pageCount: Int)
 
 data class KeyAnswer(
     val id: String,
@@ -69,7 +109,8 @@ sealed interface KeyStatus {
     data object Failed : KeyStatus
 }
 
-enum class AttemptResult { CORRECT, INCORRECT, NEEDS_SELF_CHECK }
+/** PENDING: recorded while solving, graded when the student checks the test. */
+enum class AttemptResult { CORRECT, INCORRECT, NEEDS_SELF_CHECK, PENDING }
 
 /** How the selected answer was decided. */
 enum class SelectionOrigin { RECOGNIZED, CHOSEN_BY_STUDENT }
@@ -86,3 +127,14 @@ data class AnswerAttempt(
     val strokeId: String?,
     val createdAt: Long,
 )
+
+/** Answers being collected in a document, not yet checked. [answers] are in the order given. */
+data class SolvingSession(val id: String, val documentId: String, val startedAt: Long, val answers: List<AnswerAttempt>) {
+    /**
+     * The latest answer per question (a later circle replaces an earlier one). While a page's
+     * test isn't known, the page tells the same number in two tests apart.
+     */
+    val latest: List<AnswerAttempt>
+        get() = answers.groupBy { Triple(it.testId, if (it.testId == null) it.pageIndex else null, it.question) }
+            .map { (_, list) -> list.last() }.sortedBy { it.question }
+}

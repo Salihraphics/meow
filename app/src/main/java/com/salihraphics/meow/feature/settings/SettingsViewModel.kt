@@ -48,6 +48,10 @@ class SettingsViewModel(
         viewModelScope.launch { repository.setMascotAnimationsEnabled(enabled) }
     }
 
+    fun setImmediateFeedback(enabled: Boolean) {
+        viewModelScope.launch { repository.setImmediateFeedback(enabled) }
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { repository.setThemeMode(mode) }
     }

@@ -1,7 +1,11 @@
 package com.salihraphics.meow.analysis.key
 
-/** A test as the book names it: "Test 5", "5. Deneme", or unnamed. */
-data class TestRef(val number: Int?, val label: String)
+/**
+ * A test as the book names it: "Test 5", "5. Deneme". Books split into days or units repeat test
+ * numbers ("1. GÜN · TEST 2", "2. GÜN · TEST 2"), so [section] ("gun 1") keeps them apart; a
+ * section with no tests under it is itself the test (number null).
+ */
+data class TestRef(val number: Int?, val label: String, val section: String? = null)
 
 enum class Confidence { HIGH, LOW }
 
@@ -12,6 +16,9 @@ enum class KeySourceKind {
 
     /** Compact answers printed in a page's header or footer for that page's questions. */
     PAGE_MARGIN,
+
+    /** An answer table printed among the questions, usually at the end of each test. */
+    IN_TEST,
 }
 
 enum class AnswerNote {
@@ -57,6 +64,16 @@ data class DetectedTest(
     val needsReview: Boolean get() = issues.isNotEmpty() || answers.any { it.confidence == Confidence.LOW }
 }
 
-data class AnswerKeyParseResult(val tests: List<DetectedTest>) {
+data class AnswerKeyParseResult(val tests: List<DetectedTest>, val clues: KeyClues = KeyClues()) {
     val found: Boolean get() = tests.isNotEmpty()
 }
+
+/** What the parser saw, so "no key found" can say why. Page indexes are 0-based. */
+data class KeyClues(
+    /** Pages with a heading like "Cevap Anahtarı". */
+    val headingPages: List<Int> = emptyList(),
+    /** Pages read as answer-key pages. */
+    val keyPages: List<Int> = emptyList(),
+    /** Lines that looked like answers ("5. C 6. A …") anywhere in the book. */
+    val answerLines: Int = 0,
+)

@@ -41,6 +41,7 @@ class DataStoreUserPreferencesRepository(
         val displayName = stringPreferencesKey("display_name")
         val mascotAnimations = booleanPreferencesKey("mascot_animations")
         val themeMode = stringPreferencesKey("theme_mode")
+        val immediateFeedback = booleanPreferencesKey("immediate_feedback")
     }
 
     override val preferences: Flow<UserPreferences> = dataStore.data
@@ -66,6 +67,10 @@ class DataStoreUserPreferencesRepository(
         dataStore.edit { it[Keys.themeMode] = mode.name }
     }
 
+    override suspend fun setImmediateFeedback(enabled: Boolean) {
+        dataStore.edit { it[Keys.immediateFeedback] = enabled }
+    }
+
     override suspend fun restartOnboarding() {
         dataStore.edit { it[Keys.onboardingCompleted] = false }
     }
@@ -79,6 +84,7 @@ class DataStoreUserPreferencesRepository(
         profile = readProfile(),
         mascotAnimationsEnabled = this[Keys.mascotAnimations] ?: true,
         themeMode = enumOrNull<ThemeMode>(this[Keys.themeMode]) ?: ThemeMode.SYSTEM,
+        immediateFeedback = this[Keys.immediateFeedback] ?: false,
     )
 
     private fun Preferences.readProfile() = StudyProfile(

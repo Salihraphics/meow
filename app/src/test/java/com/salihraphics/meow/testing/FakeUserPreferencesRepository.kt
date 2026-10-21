@@ -22,6 +22,8 @@ class FakeUserPreferencesRepository(initial: UserPreferences = UserPreferences()
 
     override suspend fun setThemeMode(mode: ThemeMode) = current.update { it.copy(themeMode = mode) }
 
+    override suspend fun setImmediateFeedback(enabled: Boolean) = current.update { it.copy(immediateFeedback = enabled) }
+
     override suspend fun restartOnboarding() = current.update { it.copy(onboardingCompleted = false) }
 
     override suspend fun resetAll() = current.update { UserPreferences() }

@@ -13,13 +13,18 @@ import com.salihraphics.meow.domain.model.AnswerOrigin
 import com.salihraphics.meow.domain.model.AnswerType
 import com.salihraphics.meow.domain.model.AttemptResult
 import com.salihraphics.meow.domain.model.KeyAnswer
+import com.salihraphics.meow.domain.model.KeySource
+import com.salihraphics.meow.domain.model.AnalysisClues
 import com.salihraphics.meow.domain.model.KeyTest
 import com.salihraphics.meow.domain.model.KeyTestKind
 import com.salihraphics.meow.domain.model.KeyStatus
 import com.salihraphics.meow.domain.model.KeyTestStatus
 import com.salihraphics.meow.domain.model.SelectionOrigin
+import com.salihraphics.meow.domain.model.SolvingSession
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
@@ -72,65 +77,102 @@ class AnswerKeyRepository(
 
     /**
      * Stores what was detected, all at once: a crash mid-way leaves the previous state, never a
-     * half-written key. A confirmed key is never replaced by a new detection.
+     * half-written key. Tests the student confirmed or typed are never replaced, and a detection
+     * repeating a confirmed test isn't added again.
      */
     suspend fun saveOutcome(documentId: String, contentSha256: String, outcome: AnalysisOutcome) {
         db.withTransaction {
             val time = now()
-            if (dao.confirmedCount(documentId) == 0) {
-                dao.deleteDetectedTests(documentId, time)
-                outcome.result.tests.forEachIndexed { index, detected ->
-                    val testId = newId()
-                    dao.insertTest(
-                        KeyTestEntity(
-                            id = testId,
-                            documentId = documentId,
-                            sourceDocumentId = documentId,
-                            label = detected.ref?.label ?: "",
-                            testNumber = detected.ref?.number,
-                            kind = when (detected.kind) {
-                                KeySourceKind.KEY_SECTION -> KeyTestKind.KEY_SECTION
-                                KeySourceKind.PAGE_MARGIN -> KeyTestKind.PAGE_MARGIN
-                            }.name,
-                            status = KeyTestStatus.DETECTED.name,
-                            sourcePages = detected.sourcePages.joinToString(","),
-                            firstQuestionPage = detected.questionPages.minOrNull(),
-                            lastQuestionPage = detected.questionPages.maxOrNull(),
-                            orderIndex = index,
-                            createdAt = time,
-                            updatedAt = time,
-                            deletedAt = null,
-                        ),
-                    )
-                    dao.insertAnswers(
-                        detected.answers.map { answer ->
-                            KeyAnswerEntity(
-                                id = newId(),
-                                testId = testId,
-                                questionNumber = answer.question,
-                                type = AnswerType.CHOICE.name,
-                                answer = answer.answer,
-                                tolerance = null,
-                                origin = AnswerOrigin.DETECTED.name,
-                                confidence = if (answer.confidence == Confidence.HIGH) AnswerConfidence.HIGH.name else AnswerConfidence.LOW.name,
-                                note = answer.note?.name,
-                                alternatives = answer.alternatives.takeIf { it.isNotEmpty() }?.joinToString(","),
-                                sourcePage = answer.sourcePage,
-                                updatedAt = time,
-                                deletedAt = null,
-                            )
-                        },
-                    )
-                }
-            }
+            dao.deleteDetectedTests(documentId, documentId, time)
+            insertDetected(documentId, documentId, outcome, time)
             val started = dao.analysis(documentId)?.startedAt ?: time
             dao.putAnalysis(
                 DocumentAnalysisEntity(
                     documentId, contentSha256, ANALYZER_VERSION, AnalysisStatus.DONE.name, outcome.result.found,
-                    outcome.pageCount, outcome.textPages, outcome.ocrReads, started, time, null,
+                    outcome.pageCount, outcome.textPages, outcome.ocrReads, started, time, null, outcome.clues.encode(),
                 ),
             )
         }
+    }
+
+    /**
+     * Stores the key read from pages the student pointed at. Earlier unconfirmed detections from
+     * those pages are replaced; the rest of the key stays. Returns how many tests were found.
+     */
+    suspend fun saveKeyPagesOutcome(documentId: String, pages: Collection<Int>, outcome: AnalysisOutcome): Int = db.withTransaction {
+        val time = now()
+        dao.tests(documentId).map { it.test }
+            .filter { it.status == KeyTestStatus.DETECTED.name && it.kind != KeyTestKind.MANUAL.name && it.sourceDocumentId == documentId }
+            .filter { t -> t.sourcePages.split(',').mapNotNull { it.toIntOrNull() }.any { it in pages } }
+            .forEach { dao.deleteTest(it.id, time) }
+        insertDetected(documentId, documentId, outcome, time)
+    }
+
+    /** Stores the key read from a separate answer-key PDF added for [documentId]. Returns how many tests were found. */
+    suspend fun saveKeySourceOutcome(documentId: String, sourceId: String, displayName: String, outcome: AnalysisOutcome): Int =
+        db.withTransaction {
+            val time = now()
+            dao.deleteDetectedTests(documentId, sourceId, time)
+            dao.insertKeySource(KeySourceEntity(sourceId, documentId, displayName, outcome.pageCount, time, null))
+            insertDetected(documentId, sourceId, outcome, time)
+        }
+
+    fun observeKeySources(documentId: String): Flow<List<KeySource>> =
+        dao.observeKeySources(documentId).map { rows -> rows.map { KeySource(it.id, it.displayName, it.pageCount) } }
+
+    private suspend fun insertDetected(documentId: String, sourceId: String, outcome: AnalysisOutcome, time: Long): Int {
+        val existing = dao.tests(documentId).map { it.test }
+        val confirmed = existing.filter { it.status == KeyTestStatus.CONFIRMED.name }
+        var added = 0
+        outcome.result.tests.forEach { detected ->
+            val label = detected.ref?.label ?: ""
+            if (confirmed.any { it.label == label && it.testNumber == detected.ref?.number && label.isNotEmpty() }) return@forEach
+            val testId = newId()
+            dao.insertTest(
+                KeyTestEntity(
+                    id = testId,
+                    documentId = documentId,
+                    sourceDocumentId = sourceId,
+                    label = label,
+                    testNumber = detected.ref?.number,
+                    kind = when (detected.kind) {
+                        KeySourceKind.KEY_SECTION -> KeyTestKind.KEY_SECTION
+                        KeySourceKind.PAGE_MARGIN -> KeyTestKind.PAGE_MARGIN
+                        KeySourceKind.IN_TEST -> KeyTestKind.IN_TEST
+                    }.name,
+                    status = KeyTestStatus.DETECTED.name,
+                    sourcePages = detected.sourcePages.joinToString(","),
+                    // Question pages only make sense in the book itself.
+                    firstQuestionPage = detected.questionPages.minOrNull().takeIf { sourceId == documentId },
+                    lastQuestionPage = detected.questionPages.maxOrNull().takeIf { sourceId == documentId },
+                    orderIndex = existing.size + added,
+                    createdAt = time,
+                    updatedAt = time,
+                    deletedAt = null,
+                ),
+            )
+            dao.insertAnswers(
+                detected.answers.map { answer ->
+                    KeyAnswerEntity(
+                        id = newId(),
+                        testId = testId,
+                        questionNumber = answer.question,
+                        type = AnswerType.CHOICE.name,
+                        answer = answer.answer,
+                        tolerance = null,
+                        origin = AnswerOrigin.DETECTED.name,
+                        confidence = if (answer.confidence == Confidence.HIGH) AnswerConfidence.HIGH.name else AnswerConfidence.LOW.name,
+                        note = answer.note?.name,
+                        alternatives = answer.alternatives.takeIf { it.isNotEmpty() }?.joinToString(","),
+                        sourcePage = answer.sourcePage,
+                        updatedAt = time,
+                        deletedAt = null,
+                    )
+                },
+            )
+            added++
+        }
+        return added
     }
 
     suspend fun markFailed(documentId: String, contentSha256: String, error: String) {
@@ -190,32 +232,65 @@ class AnswerKeyRepository(
         }
     }
 
-    suspend fun recordAttempt(
+    fun observeAttempts(documentId: String): Flow<List<AnswerAttempt>> = dao.observeAttempts(documentId).map { rows -> rows.map { it.toDomain() } }
+
+    /**
+     * Records the student's answer in the document's open solving session (starting one if
+     * needed). [result] is PENDING unless immediate feedback graded it already.
+     */
+    suspend fun recordSelection(
         documentId: String,
         testId: String?,
         question: Int,
         pageIndex: Int,
         selected: String,
         origin: SelectionOrigin,
-        result: AttemptResult,
         strokeId: String?,
         region: FloatArray?,
-    ): String {
-        val id = newId()
+        result: AttemptResult = AttemptResult.PENDING,
+    ): String = db.withTransaction {
         val time = now()
+        val session = dao.openSession(documentId)
+            ?: SolvingSessionEntity(newId(), documentId, time, null, null, null, null, time, null).also { dao.insertSession(it) }
+        val id = newId()
         dao.insertAttempt(
             AnswerAttemptEntity(id, documentId, testId, question, pageIndex, selected, origin.name, result.name, strokeId,
-                region?.get(0), region?.get(1), region?.get(2), region?.get(3), time, time, null),
+                region?.get(0), region?.get(1), region?.get(2), region?.get(3), time, time, null, sessionId = session.id),
         )
-        return id
+        id
     }
 
-    fun observeAttempts(documentId: String): Flow<List<AnswerAttempt>> = dao.observeAttempts(documentId).map { rows ->
-        rows.map {
-            AnswerAttempt(it.id, it.documentId, it.testId, it.questionNumber, it.pageIndex, it.selected,
-                SelectionOrigin.valueOf(it.selectionOrigin), AttemptResult.valueOf(it.result), it.strokeId, it.createdAt)
+    suspend fun openSession(documentId: String): SolvingSession? {
+        val session = dao.openSession(documentId) ?: return null
+        return SolvingSession(session.id, documentId, session.startedAt, dao.sessionAttempts(session.id).map { it.toDomain() })
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun observeOpenSession(documentId: String): Flow<SolvingSession?> = dao.observeOpenSession(documentId).flatMapLatest { session ->
+        if (session == null) flowOf(null)
+        else dao.observeSessionAttempts(session.id).map { rows -> SolvingSession(session.id, documentId, session.startedAt, rows.map { it.toDomain() }) }
+    }
+
+    /** Circles erased or undone: their answers stop counting. */
+    suspend fun strokesRemoved(strokeIds: Collection<String>) {
+        if (strokeIds.isNotEmpty()) dao.setStrokeRemoved(strokeIds.toList(), true, now())
+    }
+
+    /** Circles brought back by undo or redo: their answers count again. */
+    suspend fun strokesRestored(strokeIds: Collection<String>) {
+        if (strokeIds.isNotEmpty()) dao.setStrokeRemoved(strokeIds.toList(), false, now())
+    }
+
+    /** Stores each answer's result and closes the session; the next answer starts a new one. */
+    suspend fun finishSession(sessionId: String, graded: List<GradedAttempt>, correct: Int, incorrect: Int, unanswered: Int) {
+        db.withTransaction {
+            val time = now()
+            graded.forEach { dao.setResult(it.attemptId, it.testId, it.result.name, time) }
+            dao.finishSession(sessionId, correct, incorrect, unanswered, time)
         }
     }
+
+    data class GradedAttempt(val attemptId: String, val testId: String, val result: AttemptResult)
 
     /** A document leaving the library takes its keys and attempts with it. */
     suspend fun removeDocument(documentId: String) {
@@ -223,13 +298,15 @@ class AnswerKeyRepository(
             val time = now()
             dao.deleteAllTests(documentId, time)
             dao.deleteAttempts(documentId, time)
+            dao.deleteSessions(documentId, time)
+            dao.deleteKeySources(documentId, time)
             dao.deleteAnalysis(documentId)
         }
     }
 
     companion object {
         /** Bump when detection improves enough to be worth re-running on old documents. */
-        const val ANALYZER_VERSION = 1
+        const val ANALYZER_VERSION = 2
     }
 }
 
@@ -261,5 +338,10 @@ private fun KeyTestWithAnswers.toDomain() = KeyTest(
 )
 
 private fun DocumentAnalysisEntity.toDomain() = AnalysisInfo(
-    documentId, AnalysisStatus.valueOf(status), keyFound, pageCount, textPages, ocrReads, finishedAt, error,
+    documentId, AnalysisStatus.valueOf(status), keyFound, pageCount, textPages, ocrReads, finishedAt, error, AnalysisClues.decode(clues),
+)
+
+private fun AnswerAttemptEntity.toDomain() = AnswerAttempt(
+    id, documentId, testId, questionNumber, pageIndex, selected,
+    SelectionOrigin.valueOf(selectionOrigin), AttemptResult.valueOf(result), strokeId, createdAt,
 )

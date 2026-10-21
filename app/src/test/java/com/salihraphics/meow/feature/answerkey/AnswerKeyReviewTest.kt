@@ -12,6 +12,7 @@ import com.salihraphics.meow.analysis.key.AnswerNote
 import com.salihraphics.meow.analysis.key.Confidence
 import com.salihraphics.meow.analysis.key.DetectedAnswer
 import com.salihraphics.meow.analysis.key.DetectedTest
+import com.salihraphics.meow.analysis.key.KeyClues
 import com.salihraphics.meow.analysis.key.KeySourceKind
 import com.salihraphics.meow.analysis.key.TestIssue
 import com.salihraphics.meow.analysis.key.TestRef
@@ -120,5 +121,27 @@ class AnswerKeyReviewTest {
         val answers = runBlocking { keys.tests("doc") }.single().answers
         assertEquals(listOf(AnswerType.NUMBER, AnswerType.CHOICE), answers.map { it.type })
         assertTrue(answers.all { it.origin == AnswerOrigin.MANUAL })
+    }
+
+    @Test
+    fun whenNothingIsFoundItSaysWhyAndOffersPagesKeyPdfAndManualEntry() {
+        val clues = KeyClues(headingPages = listOf(229, 230), answerLines = 0)
+        runBlocking {
+            keys.saveOutcome("doc", "h", AnalysisOutcome(AnswerKeyParseResult(emptyList(), clues), 240, 236, 12, ocrPages = listOf(239, 238, 229, 230)))
+        }
+        var pages: List<Int>? = null
+        val vm = AnswerKeyViewModel("doc", flowOf("55 Günde TYT Matematik" to 240), keys, MutableStateFlow(emptyMap()), searchAgainAction = {},
+            readKeyPagesAction = { pages = it })
+        rule.setContent { MeowTheme(darkTheme = false, mascotAnimationsEnabled = false) { AnswerKeyRoute(vm, onBack = {}) } }
+        waitForText("Neye baktım?")
+        rule.onNodeWithText("s. 230, s. 231", substring = true).assertExists()
+        rule.onNodeWithText("Cevap satırına benzeyen", substring = true).assertExists()
+        rule.onNodeWithText("Ayrı anahtar PDF'i ekle").assertExists()
+        rule.onNodeWithText("Elle gir").assertExists()
+        rule.onNodeWithText("Anahtar hangi sayfalarda?").assertExists()
+        // What the pages dialog's "Oku" sends for pages 230–231. (Dialogs with text fields never
+        // go idle under Robolectric, so the dialog itself is exercised on devices only.)
+        vm.readKeyPages(230, 231)
+        assertEquals(listOf(229, 230), pages)
     }
 }

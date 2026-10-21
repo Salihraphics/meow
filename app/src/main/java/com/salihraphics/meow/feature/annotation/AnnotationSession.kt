@@ -46,6 +46,9 @@ class AnnotationSession(
     private val scope: CoroutineScope,
     /** Told about each finished pen stroke, e.g. to check whether it circles an answer. */
     private val onStrokeAdded: (Stroke) -> Unit = {},
+    /** Strokes taken off the page (erased or undone), and put back (undo of an erase, redo). */
+    private val onStrokesRemoved: (Collection<String>) -> Unit = {},
+    private val onStrokesRestored: (Collection<String>) -> Unit = {},
     private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
     private val pages = HashMap<Int, MutableStateFlow<List<Stroke>?>>()
@@ -89,6 +92,7 @@ class AnnotationSession(
         if (removed.isEmpty()) return
         page(pageIndex).value = current - removed.toSet()
         repository.erase(removed.map { it.id })
+        onStrokesRemoved(removed.map { it.id })
         record(AnnotationEdit.Erased(pageIndex, removed))
     }
 
@@ -117,6 +121,7 @@ class AnnotationSession(
         val ids = strokes.map { it.id }.toSet()
         page(pageIndex).update { list -> list?.filterNot { it.id in ids } }
         repository.erase(ids.toList())
+        onStrokesRemoved(ids)
     }
 
     private fun show(pageIndex: Int, strokes: List<Stroke>) {
@@ -125,6 +130,7 @@ class AnnotationSession(
             list.orEmpty() + strokes.filterNot { it.id in present }
         }
         repository.restore(strokes.map { it.id })
+        onStrokesRestored(strokes.map { it.id })
     }
 
     private fun record(edit: AnnotationEdit) {

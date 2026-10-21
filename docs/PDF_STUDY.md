@@ -67,21 +67,30 @@ Everything runs on the device. No PDF, page or answer leaves it.
 **Finding the key** (`analysis/`, run by `AnswerKeyAnalysisScheduler` after import and at app start)
 - One document at a time, in the background, cancelled if the document is removed. Results are
   stored per content hash and analyzer version, so a document is read once; "Yeniden ara" forces
-  a new pass. An interrupted run (app killed) is picked up again on the next start.
-- Text first: PdfBox-Android reads each page's words with positions (page fractions, top-left
-  origin, page rotation applied). The last pages (the last quarter, at least 8) are read first,
-  because that's where books put their keys; reading stops promptly on cancellation.
-- OCR only when needed: pages with fewer than 25 characters of text count as scanned. If no key
-  section was found in the text and such pages exist, ML Kit's bundled Latin recogniser reads up
-  to 12 of the last scanned pages in full, then (if still nothing) only the top and bottom 14% of
-  up to 400 scanned pages, where per-page answer strips are printed.
+  a new pass, and a new analyzer version re-reads books whose key isn't confirmed. An
+  interrupted run (app killed) is picked up again on the next start.
+- Text first: PdfBox-Android reads each page's words with positions (page fractions of the crop
+  box, top-left origin, page rotation applied, the same space the pen draws in). The last pages
+  (the last quarter, at least 8) are read first, because that's where books put their keys.
+- Text that can't be trusted counts as no text: pages under 25 characters (scans), and pages
+  whose text is unreadable, e.g. fonts without a character map that give symbols or consonant
+  soup (`AnswerKeyAnalyzer.isReadable`).
+- OCR only when the text gave no key section: ML Kit's bundled Latin recogniser reads, in this
+  order and at most 12 pages, pages titled "Cevap Anahtarı" whose answers weren't text (letters
+  drawn as shapes or images), the last scanned pages, and, only if nothing at all was found, the
+  last text pages. If still nothing, it reads the top and bottom 14% of scanned pages (up to 400)
+  for per-page answer strips.
 - The parser (`AnswerKeyParser`, plain Kotlin) finds:
   - key sections: a heading ("Cevap Anahtarı", "Cevaplar", "Yanıtlar", "Test Cevapları",
-    "Doğru Cevaplar", "Answer Key"…), pages that continue one, or pages dense with numbered
-    answers;
-  - answers as "1. D", "1-D", "1) D", "1:D", "1/D", "1D" and grids (a row of numbers over a row of
-    letters); one or two columns;
-  - test headers: "TEST 5", "5. Test", "Deneme Sınavı 2", "Konu Tarama 3", "Ünite 1",
+    "Doğru Cevaplar", "Answer Key"…), pages that continue one, pages dense with numbered answers,
+    including one-answer-per-line tables;
+  - answers as "1. D", "1-D", "1) D", "1:D", "1/D", "1D", "1.(D)", "1.Ⓓ" and grids (a row of numbers
+    over a row of letters, rows optionally labelled "Soru" / "Cevap"); one or two columns;
+  - answer tables among the questions (typically closing each test), wherever they are;
+  - days and units that group tests: "1. GÜN", "GÜN 12", "2. Ünite", "Bölüm 3". Books like
+    "55 Günde…" repeat test numbers every day, so a key test is "1. GÜN · TEST 2" and is matched
+    only to the pages under that day's "TEST 2" header. A day with no tests under it is one test;
+  - test headers: "TEST 5", "5. Test", "Deneme Sınavı 2", "Konu Tarama 3", "Pekiştirme Testi",
     "Alıştırma"… Turkish letters are folded (İ/ı, Ş, Ğ, Ü, Ö, Ç), so OCR that drops the dots still
     matches. A restart at question 1 without a header starts a new, unnamed test;
   - header/footer strips like "5.B 6.D 7.A" (at least two answers on the line).
@@ -90,58 +99,92 @@ Everything runs on the device. No PDF, page or answer leaves it.
   guessed. Answers are never invented: a question with no readable answer is listed as missing.
 - Per test it reports missing questions, the same question with two different answers (both
   kept, marked as a conflict), too few answers, and out-of-order numbering.
-- Question pages: "TEST N" headers near the top of ordinary pages give each test its page range,
-  used later to know which test a marked question belongs to.
+- What the search saw is kept (`AnalysisClues`): pages with a key heading, key pages, how many
+  answer-like lines, unreadable and scanned pages, pages read with OCR.
 
-**Storage** (Room, database v3 by auto-migration from v2, so existing libraries and strokes are
-kept): `document_analysis`, `key_tests`, `key_answers`, `answer_attempts`. Each answer records
-its type (choice, number, text), origin (detected / manual), confidence, note and source page.
-Every test records which document its answers came from (`sourceDocumentId`): today always the
-same PDF; a key in a separate PDF can be linked later without a schema change.
+**When the search finds nothing** the review screen says why in plain words ("Neye baktım?") and
+offers, in this order:
+1. "Anahtar hangi sayfalarda?": the student gives a page range; those pages are read as key
+   pages whatever they look like, with OCR for pages whose text gives no answers.
+2. "Ayrı anahtar PDF'i ekle": a separate answer-key PDF, picked with the system picker, copied
+   privately (`files/keysources`, not into the library) and read whole. Its tests name the file.
+3. "Elle gir": typing the key, the last resort.
 
-**Review** (`feature/answerkey`, from the library card's key status or the viewer's ✓ button)
+**Storage** (Room v4, by auto-migrations 1→2→3→4; existing libraries, strokes and keys are kept):
+`document_analysis` (with the clues), `key_tests`, `key_answers`, `key_sources`,
+`answer_attempts`, `solving_sessions`. Each answer records its type (choice, number, text), origin
+(detected / manual), confidence, note and source page; each test its source document (the book or
+a key PDF). A new detection replaces only unconfirmed detections from the same source (or from
+the pages the student pointed at). Confirmed and typed tests are never replaced, and a detection
+repeating a confirmed test isn't added again.
+
+**Review** (`feature/answerkey`, one screen: from the library card's key status or the viewer's ✓)
 - Each test shows its answers as chips: found, "Emin değilim" (OCR guess or conflict), "Elle
-  girildi" (typed by the student) and, after confirming, "Onaylı".
+  girildi" (typed by the student) and, after confirming, "Onaylı". "Kaynağı gör" shows the page
+  the answers were read from (book or key PDF), so they can be checked without leaving.
 - Tap an answer to change it (choice A–E, a number with an optional tolerance, or written text),
   or delete it; add missing answers, add or rename tests and set their question pages.
 - "Onayla" confirms the document's tests; it refuses while a conflict is unresolved. Only
-  confirmed tests are used for grading. A new analysis never replaces confirmed tests.
-- If nothing was found the screen says so plainly and offers manual entry.
+  confirmed tests are used for grading.
 
-## Answer checking (multiple choice)
+## Solving and checking a test (multiple choice)
 
-- With a pen, the student circles an option on the PDF. When the stroke ends, the viewer finds
-  the question region and option labels on that page (`QuestionLayoutDetector`, from the PDF
-  text, or OCR for a scanned page), then `ChoiceRecognizer` decides:
-  - a closed loop around exactly one option label → that option;
-  - around several labels, around the value next to a label, or a tick touching a label → MEOW
-    asks "Soru N: hangi şıkkı işaretledin?" with every option (the likely ones first) and "Cevap
-    değil";
-  - anything else (notes, working out, big drawings) is just a drawing.
-- `AnswerChecker` picks the test from the page ranges and grades against the confirmed key. If the
-  key isn't confirmed, the page belongs to no known test, or the question has no answer, MEOW says
-  so and offers to open the key; it never grades against an unconfirmed key.
-- The cat reacts (correct / incorrect / unsure), and each graded answer is saved as an attempt
-  (question, choice, result, whether it was recognised or chosen by the student, the stroke and
-  its region). The stroke itself stays an ordinary annotation; the PDF is never modified.
-- Everything is in page fractions, so zoom, rotation and screen size don't change the result.
+**Marking an answer.** With the pen, the student circles an option on the PDF. When the stroke
+ends, the viewer reads the page's layout (`QuestionLayoutDetector`, from the PDF text, or OCR for
+a scanned page) and `ChoiceRecognizer` decides what the mark means.
+- The unit is an option group: labels A, B, C… printed close together (in a row, a column or a
+  grid). Each group takes the question number printed nearest above it in its own column: "4.",
+  "4)" or a bare "4" (boxed numbers; accepted only when two or more line up as a column of
+  numbers). Headings like "1. GÜN" are not question numbers. A group with no number of its own,
+  or whose number is ambiguous, has an unknown question.
+- The question is always the one the circled label belongs to. There is no "region the mark
+  falls in" and no fallback to question 1 (that was the device bug: a "1. GÜN" header became the
+  only question and its region covered the page).
+- A closed loop around exactly one label of a numbered question → that answer. Around several
+  labels, around the value next to a label, or a tick touching a label → "Soru N: hangi şıkkı
+  işaretledin?". A known option of an unknown question → "Bu işaret hangi soru için?" with the
+  numbers on the page first, then the test's. "Cevap değil" leaves it as a drawing. Anything
+  else (notes, working out, big drawings) is just a drawing.
+- Marks are handled one at a time in the order drawn, so a quick second circle on the same
+  question is always the one that counts.
+
+**Deferred checking (default).** The answer is saved in the document's open solving session and
+the viewer only says "Soru 4: C işaretlendi", never right or wrong. A bar shows "N cevap
+işaretlendi · Testi kontrol et". Checking (`SessionGrader`):
+- takes the latest answer per question (an erased or undone circle withdraws its answer; undoing
+  that brings it back);
+- refuses to grade against an unconfirmed key ("önce cevap anahtarını onaylaman gerekiyor"; the
+  answers stay saved) or a guessed test: if a page's test isn't known, the student picks it once
+  and the test's question pages are widened to include it;
+- shows correct, incorrect and blank counts for the tests answered in, then the mistakes ("Soru 4 ·
+  Senin cevabın B · Doğrusu D", with "Sayfaya git") and blanks, and stores each result. The next
+  answer starts a new session. Sessions survive leaving the viewer and restarting the app.
+
+**Immediate feedback** is an option in Settings ("Cevabı hemen göster", off by default): each
+answer is graded as it's marked, and saved in the session the same way.
+
+- Everything is in page fractions of the crop box (what the viewer shows), so zoom, pan, device
+  rotation, page /Rotate and print bleed don't change the result.
 - Numeric and written answers can be stored and graded (`AnswerGrader`: comma decimals, fractions,
   tolerance; written answers are matched exactly after normalising, otherwise "check it yourself").
   Reading handwritten numbers or text from the page is not implemented, and nothing claims to
   grade open-ended answers.
 
 **Known limits**
-- Option labels must be printed as "A)" / "A." and question numbers as "12." / "12)" at the start
-  of a line. Other layouts produce no regions, and circling simply stays a drawing.
-- Erasing or undoing a graded circle keeps its attempt.
+- Option labels must be text "A)" / "A." / "(A)" / "Ⓐ", or bare letters A–D in a row. Questions
+  whose options are pictures (or whose page text is unreadable and OCR misses them) produce no
+  groups, and circling stays a drawing.
+- A test whose pages aren't known yet is asked once when checking.
 
 **What the JVM tests cannot cover**: Android's `PdfRenderer` and ML Kit OCR do not run under
-Robolectric. The text pipeline is tested on real PDFs generated in the tests (PdfBox, Turkish
-font, including rotated pages and two columns); OCR is tested through the `PageOcr` interface
-with fake readers. Real scanned books and OCR accuracy need checking on a device.
+Robolectric, and no tests ran on a physical device. The text pipeline is tested on real PDFs
+generated in the tests (PdfBox, Turkish font, rotated pages, print bleed, two columns); OCR is
+tested through the `PageOcr` interface with scripted readers. The book reported from device
+testing ("55 Günde TYT Matematik VDK 2024") was not available here, so its exact failure wasn't
+reproduced; the layouts above are what such books commonly use. See
+[DEVICE_TEST_CHECKLIST.md](DEVICE_TEST_CHECKLIST.md).
 
 ## Next
 
-- Question-by-question solving with timer and results (correct / wrong / blank / time), feeding
-  the mistake notebook.
-- Keys in a separate PDF, linked to a book.
+- Timed solving, per-question time, and the mistake notebook fed by checked sessions.
+- Showing ✓/✗ next to each circle after checking.

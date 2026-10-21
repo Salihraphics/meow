@@ -6,10 +6,13 @@ import com.salihraphics.meow.analysis.TextLine
 /**
  * Finds answer keys in positioned page text (from the PDF or from OCR).
  *
- * It looks for two things:
- * - **Key sections**: a heading such as "Cevap Anahtarı", or a dense block of numbered answers,
- *   anywhere in the book (often at the end), split into tests by "Test 5"-style headers or by
+ * It looks for:
+ * - **Key sections**: a heading such as "Cevap Anahtarı", a dense block of numbered answers, or
+ *   pages the student pointed at, anywhere in the book (often at the end). They are split into
+ *   tests by "Test 5"-style headers, into days or units by "1. GÜN" / "2. Ünite" headers, or by
  *   numbering that restarts.
+ * - **Answer tables among the questions**: a row of numbers with a row of letters under it,
+ *   typically at the end of each test.
  * - **Page margins**: compact answer lines ("5.B 6.D 7.A") in a page's header or footer.
  *
  * It only reports what is printed. Missing numbers are reported, never filled in, and anything
@@ -35,8 +38,14 @@ class AnswerKeyParser(
 
     private val testHeader = Regex(
         "^(?:(\\d{1,3})\\s*\\.?\\s*)?" +
-            "(test|deneme sinavi|deneme|konu testi|konu tarama|tarama testi|tarama|alistirma|bolum|unite|quiz)" +
+            "(test|deneme sinavi|deneme|konu testi|konu tarama|tarama testi|tarama|alistirma|pekistirme testi|pekistirme|" +
+            "kazanim testi|karma test|genel tekrar testi|genel tekrar|quiz)" +
             "(?![\\p{L}])\\s*[-:#.]?\\s*(\\d{1,3})?",
+    )
+
+    /** Days and units that group tests: "1. GÜN", "GÜN 12", "2. Ünite", "Bölüm 3". */
+    private val sectionHeader = Regex(
+        "^(?:(\\d{1,3})\\s*\\.?\\s*)?(gun|unite|bolum|modul|hafta|kisim)(?![\\p{L}])\\s*[-:#.]?\\s*(\\d{1,3})?",
     )
 
     private val keyHeadings = listOf(
@@ -44,19 +53,36 @@ class AnswerKeyParser(
         "dogru cevaplar", "answer key", "answer keys", "answers",
     )
 
-    fun parse(pages: List<PageText>): AnswerKeyParseResult {
-        val keyPages = findKeySectionPages(pages)
-        val questionPageTests = mapQuestionPagesToTests(pages, keyPages)
+    /** Words that label a row of a printed answer table: "Soru 1 2 3", "Cevap C A D". */
+    private val rowLabels = setOf("soru", "no", "sorular", "cevap", "cevaplar", "yanit", "yanitlar", "answer", "answers", "key")
 
-        val sectionTests = pages.filter { it.pageIndex in keyPages }.let { parseKeySection(it) }
-        val marginTests = parseMargins(pages.filter { it.pageIndex !in keyPages }, questionPageTests)
+    /**
+     * @param forcedKeyPages pages known to hold the key (the student pointed at them, or they come
+     *   from a separate answer-key PDF): read as key sections whether or not they look like one.
+     */
+    fun parse(pages: List<PageText>, forcedKeyPages: Set<Int> = emptySet()): AnswerKeyParseResult {
+        val sorted = pages.sortedBy { it.pageIndex }
+        val keyPages = findKeySectionPages(sorted) + forcedKeyPages
+        val pureKeyPages = sorted.filter { it.pageIndex in forcedKeyPages || (it.pageIndex in keyPages && isMostlyAnswers(it)) }
+            .map { it.pageIndex }.toSet()
+        val paths = mapQuestionPages(sorted, pureKeyPages)
 
-        val pagesByTestNumber = questionPageTests.entries.groupBy({ it.value.number }, { it.key })
-        val tests = sectionTests.map { builder ->
-            val number = builder.ref?.number
-            builder.build(KeySourceKind.KEY_SECTION, if (number != null) pagesByTestNumber[number].orEmpty().sorted() else emptyList())
-        } + marginTests.map { it.build(KeySourceKind.PAGE_MARGIN, it.marginQuestionPages.sorted()) }
-        return AnswerKeyParseResult(tests.filter { it.answers.isNotEmpty() })
+        val sectionTests = parseKeySection(sorted.filter { it.pageIndex in keyPages }).map { it.build(KeySourceKind.KEY_SECTION) }
+        val sectionRefs = sectionTests.mapNotNull { it.ref }
+        val linkedSection = sectionTests.map { test ->
+            val ref = test.ref ?: return@map test
+            test.copy(questionPages = paths.filter { (_, path) -> sectionRefs.count { matches(it, path) } == 1 && matches(ref, path) }.keys.sorted())
+        }
+        val others = sorted.filter { it.pageIndex !in keyPages }
+        val tableTests = parseAnswerTables(others, paths)
+        val marginTests = parseMargins(others, paths).map { it.build(KeySourceKind.PAGE_MARGIN, it.marginQuestionPages.sorted()) }
+
+        val clues = KeyClues(
+            headingPages = sorted.filter { p -> p.lines.any { isKeyHeading(it.text) } }.map { it.pageIndex },
+            keyPages = keyPages.sorted(),
+            answerLines = sorted.sumOf { p -> p.lines.count { answerLinePairs(it, lenient = false) != null } },
+        )
+        return AnswerKeyParseResult((linkedSection + tableTests + marginTests).filter { it.answers.isNotEmpty() }, clues)
     }
 
     // ---- Key sections ------------------------------------------------------------------------
@@ -65,32 +91,40 @@ class AnswerKeyParser(
     private fun findKeySectionPages(pages: List<PageText>): Set<Int> {
         val result = HashSet<Int>()
         var continuing = false
-        for (page in pages.sortedBy { it.pageIndex }) {
+        for (page in pages) {
             val answerLines = page.lines.count { answerLinePairs(it, lenient = true) != null }
-            val dense = page.lines.count { (answerLinePairs(it, lenient = false)?.size ?: 0) >= 3 } >= 3
+            val rich = page.lines.count { (answerLinePairs(it, lenient = false)?.size ?: 0) >= 3 } >= 3
+            // A table of one answer per line ("1. C" / "2. A" …) is dense too.
+            val column = answerLines >= 8 && answerLines * 2 >= page.lines.size
             val heading = page.lines.any { isKeyHeading(it.text) }
             continuing = when {
                 heading -> true
-                continuing && answerLines > 0 -> true
+                continuing && (answerLines > 0 || page.lines.any { isTableLine(it.text) }) -> true
                 else -> false
             }
-            if (continuing || dense) result += page.pageIndex
+            if (continuing || rich || column) result += page.pageIndex
         }
         return result
+    }
+
+    /** A page that is mostly answers (not a question page with a small key on it). */
+    private fun isMostlyAnswers(page: PageText): Boolean {
+        val keyish = page.lines.count { line -> answerLinePairs(line, lenient = true) != null || isTableLine(line.text) || isKeyHeading(line.text) }
+        return keyish * 5 >= page.lines.size * 2
     }
 
     private fun parseKeySection(pages: List<PageText>): List<TestBuilder> {
         val tests = mutableListOf<TestBuilder>()
         var current: TestBuilder? = null
+        var section: TestRef? = null
 
         fun startTest(ref: TestRef?): TestBuilder = TestBuilder(ref).also { tests += it; current = it }
 
-        for (page in pages.sortedBy { it.pageIndex }) {
+        for (page in pages) {
             val lines = columnOrder(page.lines)
             var i = 0
             while (i < lines.size) {
-                val line = lines[i]
-                val text = TurkishText.normalizeSeparators(line.text)
+                val text = TurkishText.normalizeSeparators(lines[i].text)
 
                 // Answer grid: a row of question numbers, then rows of letters (optionally labelled).
                 val numbers = consecutiveNumbers(text)
@@ -100,8 +134,8 @@ class AnswerKeyParser(
                     while (j < lines.size) {
                         val row = gridRow(lines[j].text, numbers.size) ?: break
                         val target = when {
-                            row.first != null -> startTest(row.first)
-                            current == null -> startTest(null)
+                            row.first != null -> startTest(within(section, row.first!!))
+                            current == null -> startTest(section)
                             else -> current!!
                         }
                         row.second.forEachIndexed { k, letter -> target.add(Pair(numbers[k], letter, Confidence.HIGH, null), page.pageIndex) }
@@ -114,16 +148,25 @@ class AnswerKeyParser(
                     }
                 }
 
-                val header = parseTestHeader(text)
-                val rest = header?.second ?: text
-                if (header != null) startTest(header.first)
+                var rest = text
+                parseSectionHeader(rest)?.let { (ref, after) ->
+                    section = ref
+                    current = null
+                    rest = after
+                }
+                val header = parseTestHeader(rest)
+                if (header != null) {
+                    rest = header.second
+                    startTest(within(section, header.first))
+                }
                 val pairs = answerPairs(rest, lenient = true)
                 if (pairs != null && pairs.isNotEmpty()) {
-                    val target = current ?: startTest(null)
+                    val target = current ?: startTest(section)
                     // Numbering restarting without a header means a new, unnamed test.
                     val restarted = header == null && target.lastQuestion != null && pairs.first().question < target.lastQuestion!! &&
                         pairs.first().question <= 2
-                    (if (restarted) startTest(null) else target).let { t -> pairs.forEach { t.add(it, page.pageIndex) } }
+                    val into = if (restarted) startTest(section?.let { TestRef(null, "", it.section) }) else target
+                    pairs.forEach { into.add(it, page.pageIndex) }
                 }
                 i++
             }
@@ -131,12 +174,58 @@ class AnswerKeyParser(
         return tests
     }
 
+    /** "TEST 2" under "1. GÜN" is "1. GÜN · TEST 2". */
+    private fun within(section: TestRef?, test: TestRef): TestRef =
+        if (section == null) test else TestRef(test.number, "${section.label} · ${test.label}", section.section)
+
+    // ---- Answer tables among the questions ---------------------------------------------------
+
+    /**
+     * Tables printed on question pages, usually closing a test: "1 2 3 … 16" over "C A D … B".
+     * Each belongs to the test named on its page, or else to the pages since the previous table.
+     */
+    private fun parseAnswerTables(pages: List<PageText>, paths: Map<Int, TestRef>): List<DetectedTest> {
+        val found = mutableListOf<DetectedTest>()
+        var previousTablePage = -1
+        for (page in pages) {
+            val lines = columnOrder(page.lines)
+            val builders = mutableListOf<TestBuilder>()
+            var i = 0
+            while (i < lines.size) {
+                val numbers = consecutiveNumbers(TurkishText.normalizeSeparators(lines[i].text))?.takeIf { it.size >= 4 }
+                val row = if (numbers != null && i + 1 < lines.size) gridRow(lines[i + 1].text, numbers.size) else null
+                if (numbers != null && row != null) {
+                    val ref = row.first ?: paths[page.pageIndex]
+                    // A table continuing the previous one (questions 9–16 after 1–8) is the same test.
+                    val b = builders.lastOrNull()?.takeIf { it.ref == ref && it.lastQuestion == numbers.first() - 1 }
+                        ?: TestBuilder(ref).also { builders += it }
+                    row.second.forEachIndexed { k, letter -> b.add(Pair(numbers[k], letter, Confidence.HIGH, null), page.pageIndex) }
+                    i += 2
+                    continue
+                }
+                i++
+            }
+            if (builders.isEmpty()) continue
+            for (b in builders) {
+                val path = b.ref
+                val questionPages = if (path != null) {
+                    paths.filter { (_, p) -> p == path }.keys.sorted().ifEmpty { listOf(page.pageIndex) }
+                } else {
+                    ((previousTablePage + 1)..page.pageIndex).toList()
+                }
+                found += b.build(KeySourceKind.IN_TEST, questionPages)
+            }
+            previousTablePage = page.pageIndex
+        }
+        return found
+    }
+
     // ---- Page margins ------------------------------------------------------------------------
 
     private fun parseMargins(pages: List<PageText>, pageTests: Map<Int, TestRef>): List<TestBuilder> {
         val byRef = LinkedHashMap<TestRef, TestBuilder>()
         val unnamed = mutableListOf<TestBuilder>()
-        for (page in pages.sortedBy { it.pageIndex }) {
+        for (page in pages) {
             for (line in marginRows(page)) {
                 val text = TurkishText.normalizeSeparators(line.text)
                 val header = parseTestHeader(text)
@@ -173,22 +262,45 @@ class AnswerKeyParser(
 
     // ---- Question pages ----------------------------------------------------------------------
 
-    /** "TEST 5" at the top of a question page names that page and the pages after it. */
-    private fun mapQuestionPagesToTests(pages: List<PageText>, keyPages: Set<Int>): Map<Int, TestRef> {
+    /**
+     * Which test each question page belongs to, from headers near the top: "1. GÜN" (a section)
+     * and "TEST 2". A test stays current on the pages after its header until the next one.
+     */
+    private fun mapQuestionPages(pages: List<PageText>, keyPages: Set<Int>): Map<Int, TestRef> {
         val result = HashMap<Int, TestRef>()
-        var current: TestRef? = null
-        for (page in pages.sortedBy { it.pageIndex }) {
+        var section: TestRef? = null
+        var test: TestRef? = null
+        for (page in pages) {
             if (page.pageIndex in keyPages) {
-                current = null
+                section = null
+                test = null
                 continue
             }
-            val header = page.lines
-                .filter { it.box.top < 0.25f }
-                .firstNotNullOfOrNull { line -> parseTestHeader(TurkishText.normalizeSeparators(line.text))?.takeIf { it.second.length < 30 } }
-            if (header != null && header.first.number != null) current = header.first
-            current?.let { result[page.pageIndex] = it }
+            val top = page.lines.filter { it.box.top < 0.25f }.map { TurkishText.normalizeSeparators(it.text) }
+            val newSection = top.firstNotNullOfOrNull { line -> parseSectionHeader(line)?.takeIf { it.second.length < 40 }?.first }
+            if (newSection != null && newSection.section != section?.section) {
+                section = newSection
+                test = null
+            }
+            val header = top.firstNotNullOfOrNull { line ->
+                val afterSection = parseSectionHeader(line)?.second ?: line
+                parseTestHeader(afterSection)?.takeIf { it.second.length < 30 }?.first
+            }
+            if (header != null && header.number != null) test = header
+            val path = test?.let { within(section, it) } ?: section
+            path?.let { result[page.pageIndex] = it }
         }
         return result
+    }
+
+    /** Does a key test (from a key section) cover a question page with this [path]? */
+    private fun matches(key: TestRef, path: TestRef): Boolean {
+        if (key.section != null && key.section != path.section) return false
+        return when {
+            key.number != null -> key.number == path.number
+            // A day or unit with no tests under it: all its pages.
+            else -> key.section != null && key.label.isNotEmpty()
+        }
     }
 
     // ---- Line-level recognition --------------------------------------------------------------
@@ -207,17 +319,29 @@ class AnswerKeyParser(
 
     /** A test header at the start of [text], and whatever follows it. */
     fun parseTestHeader(text: String): kotlin.Pair<TestRef, String>? {
-        val folded = TurkishText.fold(text)
-        val match = testHeader.find(folded) ?: return null
+        val (number, label, rest) = header(testHeader, text) ?: return null
+        return if (number == null && label.length < 3) null else TestRef(number, label) to rest
+    }
+
+    /** A day or unit header ("1. GÜN") at the start of [text], and whatever follows it. */
+    fun parseSectionHeader(text: String): kotlin.Pair<TestRef, String>? {
+        val (number, label, rest) = header(sectionHeader, text) ?: return null
+        if (number == null) return null
+        val word = sectionHeader.find(TurkishText.fold(text))!!.groupValues[2]
+        return TestRef(null, label, "$word#$number") to rest
+    }
+
+    private fun header(regex: Regex, text: String): Triple<Int?, String, String>? {
+        val match = regex.find(TurkishText.fold(text)) ?: return null
         if (match.range.first != 0) return null
         val number = (match.groupValues[1].ifEmpty { match.groupValues[3] }).toIntOrNull()
         val label = text.substring(0, match.range.last + 1).trim().trimEnd(':', '-', '.', '#').trim()
-        if (number == null && label.length < 3) return null
-        return TestRef(number, label) to text.substring(match.range.last + 1).trim()
+        return Triple(number, label, text.substring(match.range.last + 1).trim().trimStart(':', '-').trim())
     }
 
     private fun answerLinePairs(line: TextLine, lenient: Boolean): List<Pair>? {
-        val text = TurkishText.normalizeSeparators(line.text)
+        var text = TurkishText.normalizeSeparators(line.text)
+        parseSectionHeader(text)?.let { text = it.second }
         return answerPairs(parseTestHeader(text)?.second ?: text, lenient)
     }
 
@@ -261,21 +385,35 @@ class AnswerKeyParser(
         return pairs
     }
 
-    /** "1 2 3 4 5" → [1, 2, 3, 4, 5] when the numbers count up by one. */
+    private fun tokens(text: String) = text.split(' ', ',', ';').filter { it.isNotBlank() }
+
+    /** Drops a leading row label ("Soru", "Cevap") or test name from a table row. */
+    private fun withoutRowLabel(text: String): kotlin.Pair<TestRef?, List<String>> {
+        val normalized = TurkishText.normalizeSeparators(text)
+        parseTestHeader(normalized)?.let { (ref, rest) -> return ref to tokens(rest) }
+        val all = tokens(normalized)
+        val labels = all.takeWhile { TurkishText.fold(it).trimEnd(':', '.') in rowLabels }
+        return null to all.drop(labels.size)
+    }
+
+    /** "1 2 3 4 5" (optionally "Soru 1 2 3 …") → [1, 2, 3, 4, 5] when the numbers count up by one. */
     private fun consecutiveNumbers(text: String): List<Int>? {
-        val tokens = text.split(' ', ',', ';').filter { it.isNotBlank() }
-        if (tokens.size < 3 || tokens.any { t -> t.any { !it.isDigit() } || t.length > 3 }) return null
+        val (ref, tokens) = withoutRowLabel(text)
+        if (ref != null || tokens.size < 3 || tokens.any { t -> t.any { !it.isDigit() } || t.length > 3 }) return null
         val numbers = tokens.map { it.toInt() }
         return numbers.takeIf { it.zipWithNext().all { (a, b) -> b == a + 1 } }
     }
 
-    /** A grid row: an optional test label, then exactly [count] answer letters. */
+    /** A grid row: an optional test label or row label, then exactly [count] answer letters. */
     private fun gridRow(raw: String, count: Int): kotlin.Pair<TestRef?, List<String>>? {
-        val text = TurkishText.normalizeSeparators(raw)
-        val header = parseTestHeader(text)
-        val tokens = (header?.second ?: text).split(' ', ',', ';').filter { it.isNotBlank() }
+        val (ref, tokens) = withoutRowLabel(raw)
         if (tokens.size != count || tokens.any { it.length != 1 || it[0].uppercaseChar() !in choices }) return null
-        return header?.first to tokens.map { it.uppercase() }
+        return ref to tokens.map { it.uppercase() }
+    }
+
+    private fun isTableLine(text: String): Boolean {
+        val (_, tokens) = withoutRowLabel(text)
+        return tokens.size >= 4 && (consecutiveNumbers(text) != null || tokens.all { it.length == 1 && it[0].uppercaseChar() in choices })
     }
 
     /** Two-column key pages are read column by column, so each column's tests stay together. */
@@ -303,7 +441,7 @@ class AnswerKeyParser(
             lastQuestion = pair.question
         }
 
-        fun build(kind: KeySourceKind, questionPages: List<Int>): DetectedTest {
+        fun build(kind: KeySourceKind, questionPages: List<Int> = emptyList()): DetectedTest {
             val issues = mutableListOf<TestIssue>()
             val answers = entries.groupBy { it.first.question }.toSortedMap().map { (question, found) ->
                 val distinct = found.map { it.first.answer }.distinct()
@@ -318,7 +456,7 @@ class AnswerKeyParser(
                 }
             }
             if (answers.isNotEmpty()) {
-                val start = if (kind == KeySourceKind.KEY_SECTION) 1 else answers.first().question
+                val start = if (kind == KeySourceKind.PAGE_MARGIN) answers.first().question else 1
                 val present = answers.map { it.question }.toSet()
                 val missing = (start..answers.last().question).filter { it !in present }
                 if (missing.isNotEmpty()) issues += TestIssue.Missing(missing)

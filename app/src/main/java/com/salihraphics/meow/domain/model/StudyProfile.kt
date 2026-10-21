@@ -64,4 +64,6 @@ data class UserPreferences(
     val profile: StudyProfile = StudyProfile(),
     val mascotAnimationsEnabled: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Show right/wrong as soon as an answer is circled, instead of when the test is checked. */
+    val immediateFeedback: Boolean = false,
 )

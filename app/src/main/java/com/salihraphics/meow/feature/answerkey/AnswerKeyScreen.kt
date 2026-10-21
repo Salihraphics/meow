@@ -1,5 +1,26 @@
 package com.salihraphics.meow.feature.answerkey
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.salihraphics.meow.analysis.AnswerKeyAnalysisScheduler.KeyRequest
+import com.salihraphics.meow.domain.model.AnalysisInfo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -86,10 +107,19 @@ data class AnswerKeyActions(
     val onConfirm: () -> Unit = {},
     val onSearchAgain: () -> Unit = {},
     val onMessageShown: () -> Unit = {},
+    /** The key is on these pages (1-based, inclusive). */
+    val onFindKeyPages: (first: Int, last: Int) -> Unit = { _, _ -> },
+    val onAddKeyPdf: (Uri) -> Unit = {},
+    val onClearRequest: () -> Unit = {},
 )
 
 @Composable
-fun AnswerKeyRoute(viewModel: AnswerKeyViewModel, onBack: () -> Unit) {
+fun AnswerKeyRoute(
+    viewModel: AnswerKeyViewModel,
+    onBack: () -> Unit,
+    /** Renders a page of the book (or of a key PDF, by its id) to check answers against. */
+    pagePreview: (suspend (sourceId: String, pageIndex: Int) -> ImageBitmap?)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     AnswerKeyContent(
         state,
@@ -104,7 +134,11 @@ fun AnswerKeyRoute(viewModel: AnswerKeyViewModel, onBack: () -> Unit) {
             onConfirm = viewModel::confirm,
             onSearchAgain = viewModel::searchAgain,
             onMessageShown = viewModel::messageShown,
+            onFindKeyPages = viewModel::readKeyPages,
+            onAddKeyPdf = viewModel::readKeyPdf,
+            onClearRequest = viewModel::clearRequest,
         ),
+        pagePreview = pagePreview,
     )
 }
 
@@ -119,7 +153,11 @@ private fun KeyAnswer.state(test: KeyTest) = when {
 }
 
 @Composable
-fun AnswerKeyContent(state: AnswerKeyUiState, actions: AnswerKeyActions) {
+fun AnswerKeyContent(
+    state: AnswerKeyUiState,
+    actions: AnswerKeyActions,
+    pagePreview: (suspend (sourceId: String, pageIndex: Int) -> ImageBitmap?)? = null,
+) {
     val snackbar = remember { SnackbarHostState() }
     val messageText = when (val m = state.message) {
         KeyMessage.Confirmed -> stringResource(R.string.key_msg_confirmed)
@@ -137,6 +175,14 @@ fun AnswerKeyContent(state: AnswerKeyUiState, actions: AnswerKeyActions) {
     var editing by remember { mutableStateOf<kotlin.Pair<KeyTest, KeyAnswer?>?>(null) }
     var editingTest by remember { mutableStateOf<KeyTest?>(null) }
     var addingTest by rememberSaveable { mutableStateOf(false) }
+    var askingKeyPages by rememberSaveable { mutableStateOf(false) }
+    var previewing by remember { mutableStateOf<KeyTest?>(null) }
+    val pickKeyPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(actions.onAddKeyPdf) }
+    val findActions = FindKeyActions(
+        onPages = { askingKeyPages = true },
+        onPdf = { pickKeyPdf.launch(arrayOf("application/pdf")) },
+        onManual = { addingTest = true },
+    )
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -172,14 +218,17 @@ fun AnswerKeyContent(state: AnswerKeyUiState, actions: AnswerKeyActions) {
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                item { StatusCard(state) }
+                item { StatusCard(state, findActions) }
+                state.request?.let { request -> item { RequestCard(request, actions.onClearRequest) } }
                 if (!state.tests.isNullOrEmpty()) item { Legend() }
                 items(state.tests.orEmpty(), key = { it.id }) { test ->
                     TestCard(
                         test = test,
+                        source = sourceLabel(test, state),
                         onAnswer = { answer -> editing = test to answer },
                         onAddAnswer = { editing = test to null },
                         onEditTest = { editingTest = test },
+                        onViewSource = if (pagePreview != null && test.sourcePages.isNotEmpty()) ({ previewing = test }) else null,
                     )
                 }
                 item {
@@ -192,6 +241,12 @@ fun AnswerKeyContent(state: AnswerKeyUiState, actions: AnswerKeyActions) {
                             }
                             if (state.status !is KeyStatus.Searching) {
                                 TextButton(onClick = actions.onSearchAgain) { Text(stringResource(R.string.key_search_again)) }
+                            }
+                        }
+                        if (!state.tests.isNullOrEmpty()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = findActions.onPages) { Text(stringResource(R.string.key_find_pages_more)) }
+                                TextButton(onClick = findActions.onPdf) { Text(stringResource(R.string.key_add_pdf)) }
                             }
                         }
                         if (state.tests.orEmpty().any { it.isConfirmed }) {
@@ -230,6 +285,16 @@ fun AnswerKeyContent(state: AnswerKeyUiState, actions: AnswerKeyActions) {
             onDelete = { actions.onDeleteTest(test); editingTest = null },
         )
     }
+    if (askingKeyPages) {
+        KeyPagesDialog(
+            pageCount = state.pageCount,
+            onDismiss = { askingKeyPages = false },
+            onRead = { first, last -> actions.onFindKeyPages(first, last); askingKeyPages = false },
+        )
+    }
+    previewing?.let { test ->
+        if (pagePreview != null) SourcePreviewDialog(test, sourceLabel(test, state), pagePreview, onDismiss = { previewing = null })
+    }
     if (addingTest) {
         TestDialog(
             initialLabel = "",
@@ -242,36 +307,212 @@ fun AnswerKeyContent(state: AnswerKeyUiState, actions: AnswerKeyActions) {
     }
 }
 
+/** The ways to give MEOW the key when it didn't find it: point at pages, add a key PDF, type it. */
+private class FindKeyActions(val onPages: () -> Unit, val onPdf: () -> Unit, val onManual: () -> Unit)
+
 @Composable
-private fun StatusCard(state: AnswerKeyUiState) {
+private fun StatusCard(state: AnswerKeyUiState, find: FindKeyActions) {
     val status = state.status
     val tests = state.tests.orEmpty()
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            val mood = when {
-                status is KeyStatus.Searching -> MascotMood.Curious
-                tests.isNotEmpty() && tests.all { it.isConfirmed } -> MascotMood.Happy
-                tests.isNotEmpty() -> MascotMood.Idle
-                else -> MascotMood.Encouraging
+        Column {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                val mood = when {
+                    status is KeyStatus.Searching -> MascotMood.Curious
+                    tests.isNotEmpty() && tests.all { it.isConfirmed } -> MascotMood.Happy
+                    tests.isNotEmpty() -> MascotMood.Idle
+                    else -> MascotMood.Encouraging
+                }
+                MeowCat(mood, Modifier.size(72.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    val body = when {
+                        status is KeyStatus.Searching -> R.string.key_searching_body
+                        tests.isNotEmpty() && tests.all { it.isConfirmed } -> R.string.key_confirmed_body
+                        tests.isNotEmpty() -> R.string.key_found_body
+                        status == KeyStatus.Failed -> R.string.key_failed_body
+                        else -> R.string.key_not_found_body
+                    }
+                    Text(stringResource(body), style = MaterialTheme.typography.bodyMedium)
+                    if (status is KeyStatus.Searching) {
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(progress = { status.progress }, modifier = Modifier.fillMaxWidth())
+                    }
+                    if ((state.analysis?.ocrReads ?: 0) > 0 && tests.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(stringResource(R.string.key_scanned_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
-            MeowCat(mood, Modifier.size(72.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                val body = when {
-                    status is KeyStatus.Searching -> R.string.key_searching_body
-                    tests.isNotEmpty() && tests.all { it.isConfirmed } -> R.string.key_confirmed_body
-                    tests.isNotEmpty() -> R.string.key_found_body
-                    status == KeyStatus.Failed -> R.string.key_failed_body
-                    else -> R.string.key_not_found_body
+            val searched = status == KeyStatus.NotFound || status == KeyStatus.Failed
+            if (searched && tests.isEmpty()) {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                    state.analysis?.let { Diagnostics(it) }
+                    Spacer(Modifier.height(10.dp))
+                    FindKeyButtons(find)
                 }
-                Text(stringResource(body), style = MaterialTheme.typography.bodyMedium)
-                if (status is KeyStatus.Searching) {
+            }
+        }
+    }
+}
+
+/** Why nothing was found, in plain words, from what the search saw. */
+@Composable
+private fun Diagnostics(analysis: AnalysisInfo) {
+    val clues = analysis.clues
+    val lines = buildList {
+        add(stringResource(R.string.key_diag_text, analysis.pageCount, analysis.textPages))
+        if (clues.unreadablePages.isNotEmpty()) add(stringResource(R.string.key_diag_unreadable, clues.unreadablePages.size))
+        if (clues.scannedPages > 0) add(stringResource(R.string.key_diag_scanned, clues.scannedPages, clues.ocrPages.size))
+        add(
+            if (clues.headingPages.isNotEmpty()) stringResource(R.string.key_diag_headings, pageList(clues.headingPages))
+            else stringResource(R.string.key_diag_no_heading),
+        )
+        if (clues.answerLines == 0) add(stringResource(R.string.key_diag_no_lines))
+        add(stringResource(R.string.key_diag_hint))
+    }
+    Text(stringResource(R.string.key_diag_title), style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+    lines.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+}
+
+private fun pageList(pages: List<Int>) = pages.take(8).joinToString(", ") { "s. ${it + 1}" } + if (pages.size > 8) "…" else ""
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FindKeyButtons(find: FindKeyActions) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Button(onClick = find.onPages) { Text(stringResource(R.string.key_find_pages)) }
+        OutlinedButton(onClick = find.onPdf) { Text(stringResource(R.string.key_add_pdf)) }
+        TextButton(onClick = find.onManual) { Text(stringResource(R.string.key_manual)) }
+    }
+}
+
+@Composable
+private fun RequestCard(request: KeyRequest, onDismiss: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
+            when (request) {
+                is KeyRequest.Running -> {
+                    Text(stringResource(R.string.key_request_running), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(progress = { status.progress }, modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(progress = { request.progress }, modifier = Modifier.fillMaxWidth())
                 }
-                if ((state.analysis?.ocrReads ?: 0) > 0 && tests.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(stringResource(R.string.key_scanned_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                is KeyRequest.Done -> Text(
+                    if (request.testsFound > 0) stringResource(R.string.key_request_done, request.testsFound) else stringResource(R.string.key_request_none),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                is KeyRequest.Failed -> Text(
+                    stringResource(
+                        when (request.reason) {
+                            KeyRequest.Reason.NOT_A_PDF -> R.string.key_request_not_pdf
+                            KeyRequest.Reason.NO_ACCESS -> R.string.key_request_no_access
+                            KeyRequest.Reason.UNREADABLE -> R.string.key_request_unreadable
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (request !is KeyRequest.Running) {
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text(stringResource(R.string.check_ok)) }
+            }
+        }
+    }
+}
+
+/** Where a test's answers were read from, naming a separate key PDF when that's the source. */
+@Composable
+private fun sourceLabel(test: KeyTest, state: AnswerKeyUiState): String {
+    val pages = test.sourcePages.joinToString(", ") { "s. ${it + 1}" }
+    if (test.kind != KeyTestKind.MANUAL && test.sourceDocumentId != state.documentId && state.documentId.isNotEmpty()) {
+        val name = state.keySources.firstOrNull { it.id == test.sourceDocumentId }?.displayName?.ifBlank { null }
+            ?: stringResource(R.string.key_source_pdf_untitled)
+        return stringResource(R.string.key_source_pdf, name, pages)
+    }
+    return when (test.kind) {
+        KeyTestKind.KEY_SECTION -> stringResource(R.string.key_source_section, pages)
+        KeyTestKind.PAGE_MARGIN -> stringResource(R.string.key_source_margin, pages)
+        KeyTestKind.IN_TEST -> stringResource(R.string.key_source_in_test, pages)
+        KeyTestKind.MANUAL -> stringResource(R.string.key_source_manual)
+    }
+}
+
+@Composable
+private fun KeyPagesDialog(pageCount: Int, onDismiss: () -> Unit, onRead: (Int, Int) -> Unit) {
+    val focus = LocalFocusManager.current
+    val done = KeyboardActions(onDone = { focus.clearFocus() })
+    var first by rememberSaveable { mutableStateOf("") }
+    var last by rememberSaveable { mutableStateOf("") }
+    val firstPage = first.toIntOrNull()?.takeIf { it in 1..maxOf(pageCount, 1) }
+    val lastPage = (last.toIntOrNull() ?: firstPage)?.takeIf { firstPage != null && it in firstPage..maxOf(pageCount, 1) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.key_pages_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(stringResource(R.string.key_pages_dialog_body, pageCount), style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = first, onValueChange = { first = it.filter(Char::isDigit).take(4) },
+                        label = { Text(stringResource(R.string.key_pages_from)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done), keyboardActions = done, modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = last, onValueChange = { last = it.filter(Char::isDigit).take(4) },
+                        label = { Text(stringResource(R.string.key_pages_to)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done), keyboardActions = done, modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = firstPage != null && lastPage != null, onClick = { onRead(firstPage!!, lastPage!!) }) {
+                Text(stringResource(R.string.key_pages_read))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/** The page a test's answers were read from, to check them without leaving this screen. */
+@Composable
+private fun SourcePreviewDialog(
+    test: KeyTest,
+    source: String,
+    pagePreview: suspend (sourceId: String, pageIndex: Int) -> ImageBitmap?,
+    onDismiss: () -> Unit,
+) {
+    var index by rememberSaveable { mutableIntStateOf(0) }
+    val page = test.sourcePages[index.coerceIn(0, test.sourcePages.lastIndex)]
+    // null while loading; then the page, or a failure.
+    var loaded by remember(test.sourceDocumentId, page) { mutableStateOf<Result<ImageBitmap>?>(null) }
+    LaunchedEffect(test.sourceDocumentId, page) {
+        loaded = runCatching { pagePreview(test.sourceDocumentId, page) ?: error("no page") }
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.padding(12.dp).widthIn(max = 720.dp).fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text(stringResource(R.string.key_preview_title, testTitle(test), page + 1), style = MaterialTheme.typography.titleMedium)
+                Text(source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 560.dp).verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
+                    val bitmap = loaded?.getOrNull()
+                    when {
+                        bitmap != null -> Image(bitmap, contentDescription = null, modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                        loaded != null -> Text(stringResource(R.string.key_preview_failed))
+                        else -> CircularProgressIndicator()
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (test.sourcePages.size > 1) {
+                        IconButton(onClick = { index-- }, enabled = index > 0) {
+                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.key_preview_previous))
+                        }
+                        IconButton(onClick = { index++ }, enabled = index < test.sourcePages.lastIndex) {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.key_preview_next))
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.check_dismiss)) }
                 }
             }
         }
@@ -312,14 +553,22 @@ private fun AnswerState.border(): BorderStroke? = when (this) {
     else -> null
 }
 
+/** A test's name as the student sees it: its label, or "Test 5", or "Adsız test". */
 @Composable
-private fun testTitle(test: KeyTest) = test.label.ifBlank {
+fun testTitle(test: KeyTest) = test.label.ifBlank {
     test.number?.let { stringResource(R.string.key_test_numbered, it) } ?: stringResource(R.string.key_test_untitled)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TestCard(test: KeyTest, onAnswer: (KeyAnswer) -> Unit, onAddAnswer: () -> Unit, onEditTest: () -> Unit) {
+private fun TestCard(
+    test: KeyTest,
+    source: String,
+    onAnswer: (KeyAnswer) -> Unit,
+    onAddAnswer: () -> Unit,
+    onEditTest: () -> Unit,
+    onViewSource: (() -> Unit)?,
+) {
     val scheme = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.large, color = scheme.surfaceContainerLow, border = BorderStroke(1.dp, scheme.outlineVariant)) {
         Column(Modifier.padding(16.dp)) {
@@ -337,16 +586,7 @@ private fun TestCard(test: KeyTest, onAnswer: (KeyAnswer) -> Unit, onAddAnswer: 
                     Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.key_edit_test))
                 }
             }
-            val pages = test.sourcePages.joinToString(", ") { "s. ${it + 1}" }
-            Text(
-                when (test.kind) {
-                    KeyTestKind.KEY_SECTION -> stringResource(R.string.key_source_section, pages)
-                    KeyTestKind.PAGE_MARGIN -> stringResource(R.string.key_source_margin, pages)
-                    KeyTestKind.MANUAL -> stringResource(R.string.key_source_manual)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = scheme.onSurfaceVariant,
-            )
+            Text(source, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
             Text(
                 test.questionPages?.let { stringResource(R.string.key_question_pages, it.first + 1, it.last + 1) }
                     ?: stringResource(R.string.key_question_pages_unknown),
@@ -364,10 +604,13 @@ private fun TestCard(test: KeyTest, onAnswer: (KeyAnswer) -> Unit, onAddAnswer: 
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 test.answers.forEach { answer -> AnswerChip(test, answer, onClick = { onAnswer(answer) }) }
             }
-            TextButton(onClick = onAddAnswer, modifier = Modifier.padding(top = 4.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.key_add_answer))
+            Row(Modifier.padding(top = 4.dp)) {
+                TextButton(onClick = onAddAnswer) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.key_add_answer))
+                }
+                if (onViewSource != null) TextButton(onClick = onViewSource) { Text(stringResource(R.string.key_view_source)) }
             }
         }
     }

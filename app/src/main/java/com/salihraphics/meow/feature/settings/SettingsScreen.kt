@@ -105,6 +105,14 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
                         onCheckedChange = viewModel::setMascotAnimations,
                     )
                 }
+                Section(stringResource(R.string.settings_section_solving)) {
+                    SwitchRow(
+                        title = stringResource(R.string.settings_immediate_feedback),
+                        description = stringResource(R.string.settings_immediate_feedback_desc),
+                        checked = current.immediateFeedback,
+                        onCheckedChange = viewModel::setImmediateFeedback,
+                    )
+                }
     }
     val secondarySections = @Composable {
                 Section(stringResource(R.string.settings_section_appearance)) {

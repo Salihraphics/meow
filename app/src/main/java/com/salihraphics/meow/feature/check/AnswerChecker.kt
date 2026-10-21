@@ -33,7 +33,8 @@ object AnswerChecker {
         return CheckOutcome.Graded(question, selected, key.value, AnswerGrader.grade(key, selected), test.id)
     }
 
-    private fun testFor(pageIndex: Int, question: Int, tests: List<KeyTest>): KeyTest? {
+    /** The test that question [question] on page [pageIndex] belongs to, or null if that isn't known. */
+    fun testFor(pageIndex: Int, question: Int, tests: List<KeyTest>): KeyTest? {
         val onPage = tests.filter { it.questionPages?.contains(pageIndex) == true }
         return when {
             onPage.size == 1 -> onPage.single()

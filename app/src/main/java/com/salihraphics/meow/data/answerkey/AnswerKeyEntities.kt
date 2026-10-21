@@ -1,5 +1,6 @@
 package com.salihraphics.meow.data.answerkey
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
@@ -23,6 +24,19 @@ data class DocumentAnalysisEntity(
     val startedAt: Long,
     val finishedAt: Long?,
     val error: String?,
+    /** What the search saw, for explaining a miss: see [AnalysisClues]. */
+    @ColumnInfo(defaultValue = "NULL") val clues: String? = null,
+)
+
+/** A separate answer-key PDF the student added for a book; kept privately, not in the library. */
+@Entity(tableName = "key_sources", indices = [Index("documentId")])
+data class KeySourceEntity(
+    @PrimaryKey val id: String,
+    val documentId: String,
+    val displayName: String,
+    val pageCount: Int,
+    val addedAt: Long,
+    val deletedAt: Long?,
 )
 
 @Entity(tableName = "key_tests", indices = [Index("documentId")])
@@ -64,9 +78,10 @@ data class KeyAnswerEntity(
 
 /**
  * A student's answer to one question. Stroke and region link it to the mark on the page, for
- * the wrong-answer notebook and statistics later.
+ * the wrong-answer notebook and statistics later. [result] stays PENDING until the test is
+ * checked. Several attempts at one question in a session are kept; the latest counts.
  */
-@Entity(tableName = "answer_attempts", indices = [Index("documentId"), Index("testId")])
+@Entity(tableName = "answer_attempts", indices = [Index("documentId"), Index("testId"), Index("sessionId")])
 data class AnswerAttemptEntity(
     @PrimaryKey val id: String,
     val documentId: String,
@@ -82,6 +97,27 @@ data class AnswerAttemptEntity(
     val regionRight: Float?,
     val regionBottom: Float?,
     val createdAt: Long,
+    val updatedAt: Long,
+    val deletedAt: Long?,
+    /** The solving session it was recorded in; null for attempts saved before sessions existed. */
+    @ColumnInfo(defaultValue = "NULL") val sessionId: String? = null,
+    /** Its circle was erased or undone, so it doesn't count (undo of that brings it back). */
+    @ColumnInfo(defaultValue = "0") val strokeRemoved: Boolean = false,
+)
+
+/**
+ * One sitting of solving in a document: answers are collected while open and graded together
+ * when the student checks. The counts are filled in then.
+ */
+@Entity(tableName = "solving_sessions", indices = [Index("documentId")])
+data class SolvingSessionEntity(
+    @PrimaryKey val id: String,
+    val documentId: String,
+    val startedAt: Long,
+    val checkedAt: Long?,
+    val correct: Int?,
+    val incorrect: Int?,
+    val unanswered: Int?,
     val updatedAt: Long,
     val deletedAt: Long?,
 )

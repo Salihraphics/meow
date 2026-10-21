@@ -24,10 +24,27 @@ object TurkishText {
         return sb.toString()
     }
 
-    /** Separators books use between answers: middle dots, bullets, dashes of every width. */
-    fun normalizeSeparators(text: String): String =
-        text.replace(Regex("[·•∙●|]"), " ")
+    /**
+     * Separators books use between answers (middle dots, bullets, dashes of every width), and
+     * answer letters printed in circles (Ⓒ), full width (Ｃ) or in brackets ("(C)"), as plain letters.
+     */
+    fun normalizeSeparators(text: String): String {
+        val letters = StringBuilder(text.length)
+        for (c in text) {
+            letters.append(
+                when (c) {
+                    in '\u24B6'..'\u24CF' -> " ${'A' + (c - '\u24B6')} "
+                    in '\u24D0'..'\u24E9' -> " ${'A' + (c - '\u24D0')} "
+                    in '\uFF21'..'\uFF3A' -> 'A' + (c - '\uFF21')
+                    else -> c
+                },
+            )
+        }
+        return letters.toString()
+            .replace(Regex("\\(([A-Ea-e])\\)"), " $1 ")
+            .replace(Regex("[·•∙●|]"), " ")
             .replace(Regex("[–—‒−]"), "-")
             .replace(Regex("\\s+"), " ")
             .trim()
+    }
 }

@@ -30,6 +30,16 @@ import com.salihraphics.meow.domain.model.Stroke
 import com.salihraphics.meow.feature.check.AnswerChecker
 import com.salihraphics.meow.feature.check.AnswerCheckUi
 import com.salihraphics.meow.feature.check.CheckOutcome
+import com.salihraphics.meow.feature.check.SessionCheck
+import com.salihraphics.meow.feature.check.SessionGrader
+import com.salihraphics.meow.domain.model.AttemptResult
+import com.salihraphics.meow.domain.model.SolvingSession
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class ViewerError { MISSING, PASSWORD_PROTECTED, DAMAGED }
 
@@ -57,6 +67,8 @@ class PdfViewerViewModel(
     private val answerKeys: AnswerKeyRepository? = null,
     /** Reads question positions for answer checking, from the PDF text or OCR. */
     private val layoutSourceFactory: ((File, PdfRenderSession) -> PageLayoutSource)? = null,
+    /** The "show right/wrong immediately" setting; off means answers are checked per test. */
+    immediateFeedbackSetting: Flow<Boolean> = flowOf(false),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<ViewerUiState>(ViewerUiState.Loading)
@@ -65,7 +77,27 @@ class PdfViewerViewModel(
     private var session: PdfRenderSession? = null
 
     /** Strokes, tool and undo history; here so rotation keeps them. */
-    private val annotations = AnnotationSession(documentId, annotationRepository, viewModelScope, onStrokeAdded = ::onStrokeAdded)
+    private val annotations = AnnotationSession(
+        documentId, annotationRepository, viewModelScope,
+        onStrokeAdded = ::onStrokeAdded,
+        // An erased (or undone) circle takes its answer with it; written on the app scope so it
+        // lands even if the screen closes right after.
+        onStrokesRemoved = { ids -> answerKeys?.let { keys -> applicationScope.launch { keys.strokesRemoved(ids) } } },
+        onStrokesRestored = { ids -> answerKeys?.let { keys -> applicationScope.launch { keys.strokesRestored(ids) } } },
+    )
+
+    private val immediateFeedback: StateFlow<Boolean> = immediateFeedbackSetting.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Answers collected and not yet checked, for the "Testi kontrol et" bar. */
+    val solving: StateFlow<SolvingSession?> =
+        (answerKeys?.observeOpenSession(documentId) ?: flowOf(null)).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val answerLock = Mutex()
+
+    private val _sessionCheck = MutableStateFlow<SessionCheck?>(null)
+
+    /** The outcome of the last "Testi kontrol et", until dismissed. */
+    val sessionCheck: StateFlow<SessionCheck?> = _sessionCheck.asStateFlow()
 
     private var layoutSource: PageLayoutSource? = null
 
@@ -154,39 +186,70 @@ class PdfViewerViewModel(
     }
 
     /**
-     * A finished pen stroke: if the document has an answer key and the stroke circles an option,
-     * grade it, or ask which option was meant. Anything else is just a drawing.
+     * A finished pen stroke. If it circles an option, the answer is saved in the solving session
+     * (and graded on the spot only with immediate feedback on). If the option or question isn't
+     * clear, the student is asked. Anything else is just a drawing.
      */
     private fun onStrokeAdded(stroke: Stroke) {
-        val keys = answerKeys ?: return
+        answerKeys ?: return
         val source = layoutSource ?: return
-        viewModelScope.launch {
-            // Read fresh each time: the key may have been confirmed or edited a moment ago.
-            if (keys.tests(documentId).none { it.answers.isNotEmpty() }) return@launch
-            val layout = try {
-                source.layout(stroke.pageIndex)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                null
-            } ?: return@launch
-            val region = strokeRegion(stroke.points)
-            when (val recognition = ChoiceRecognizer.recognize(stroke.points, layout)) {
-                ChoiceRecognition.NotAnAnswer -> Unit
-                is ChoiceRecognition.Selected ->
-                    grade(stroke.pageIndex, recognition.question, recognition.letter, SelectionOrigin.RECOGNIZED, stroke.id, region)
-                is ChoiceRecognition.Unclear -> _answerCheck.value = AnswerCheckUi.Ask(
-                    recognition.question, recognition.candidates, recognition.options, stroke.pageIndex, stroke.id, region.toList(),
-                )
+        // One mark at a time, in the order drawn, so a quick second circle on the same question
+        // is always the one that counts. (The lock is fair and taken before the first suspension.)
+        viewModelScope.launch { answerLock.withLock { handleMark(source, stroke) } }
+    }
+
+    private suspend fun handleMark(source: PageLayoutSource, stroke: Stroke) {
+        val layout = try {
+            source.layout(stroke.pageIndex)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        } ?: return
+        val region = strokeRegion(stroke.points)
+        when (val recognition = ChoiceRecognizer.recognize(stroke.points, layout)) {
+            ChoiceRecognition.NotAnAnswer -> Unit
+            is ChoiceRecognition.Selected ->
+                answer(stroke.pageIndex, recognition.question, recognition.letter, SelectionOrigin.RECOGNIZED, stroke.id, region)
+            is ChoiceRecognition.Unclear -> _answerCheck.value = AnswerCheckUi.Ask(
+                question = recognition.question,
+                candidates = recognition.candidates,
+                options = recognition.options,
+                questionChoices = questionChoices(stroke.pageIndex, recognition.nearbyQuestions),
+                pageIndex = stroke.pageIndex,
+                strokeId = stroke.id,
+                region = region.toList(),
+            )
+        }
+    }
+
+    /** For an unknown question: the numbers printed on the page, then the rest of its test. */
+    private suspend fun questionChoices(pageIndex: Int, nearby: List<Int>): List<Int> {
+        val tests = answerKeys?.tests(documentId).orEmpty().filter { it.answers.isNotEmpty() }
+        val test = tests.filter { it.questionPages?.contains(pageIndex) == true }.singleOrNull()
+            ?: tests.singleOrNull()?.takeIf { it.questionPages == null }
+        val fromKey = test?.answers?.map { it.question } ?: (1..MAX_OFFERED_QUESTION).toList()
+        return (nearby + fromKey).distinct()
+    }
+
+    /** The student says which question an unclear mark answers. */
+    fun chooseQuestion(question: Int) {
+        val ask = _answerCheck.value as? AnswerCheckUi.Ask ?: return
+        if (ask.candidates.size == 1) {
+            viewModelScope.launch {
+                answer(ask.pageIndex, question, ask.candidates.single(), SelectionOrigin.CHOSEN_BY_STUDENT, ask.strokeId, ask.region.toFloatArray())
             }
+        } else {
+            _answerCheck.value = ask.copy(question = question)
         }
     }
 
     /** The student says which option they marked. */
     fun chooseOption(letter: String) {
         val ask = _answerCheck.value as? AnswerCheckUi.Ask ?: return
+        val question = ask.question ?: return
         viewModelScope.launch {
-            grade(ask.pageIndex, ask.question, letter, SelectionOrigin.CHOSEN_BY_STUDENT, ask.strokeId, ask.region.toFloatArray())
+            answer(ask.pageIndex, question, letter, SelectionOrigin.CHOSEN_BY_STUDENT, ask.strokeId, ask.region.toFloatArray())
         }
     }
 
@@ -194,22 +257,57 @@ class PdfViewerViewModel(
         _answerCheck.value = null
     }
 
-    private suspend fun grade(page: Int, question: Int, letter: String, origin: SelectionOrigin, strokeId: String, region: FloatArray) {
-        val tests = answerKeys?.tests(documentId) ?: return
-        _answerCheck.value = when (val outcome = AnswerChecker.check(page, question, letter, tests)) {
-            is CheckOutcome.Graded -> {
-                answerKeys?.let { keys ->
-                    applicationScope.launch {
-                        keys.recordAttempt(documentId, outcome.testId, question, page, letter, origin, outcome.result, strokeId, region)
-                    }
-                }
-                AnswerCheckUi.Result(outcome)
-            }
-            CheckOutcome.NoKey -> null
+    private suspend fun answer(page: Int, question: Int, letter: String, origin: SelectionOrigin, strokeId: String, region: FloatArray) {
+        val keys = answerKeys ?: return
+        val tests = keys.tests(documentId)
+        val testId = AnswerChecker.testFor(page, question, tests.filter { it.answers.isNotEmpty() })?.id
+        if (!immediateFeedback.value) {
+            keys.recordSelection(documentId, testId, question, page, letter, origin, strokeId, region)
+            _answerCheck.value = AnswerCheckUi.Recorded(question, letter)
+            return
+        }
+        val outcome = AnswerChecker.check(page, question, letter, tests)
+        val result = (outcome as? CheckOutcome.Graded)?.result ?: AttemptResult.PENDING
+        keys.recordSelection(documentId, testId, question, page, letter, origin, strokeId, region, result)
+        _answerCheck.value = when (outcome) {
+            is CheckOutcome.Graded -> AnswerCheckUi.Result(outcome)
+            CheckOutcome.NoKey -> AnswerCheckUi.Recorded(question, letter)
             CheckOutcome.KeyNotConfirmed -> AnswerCheckUi.KeyNotConfirmed
             CheckOutcome.PageTestUnknown -> AnswerCheckUi.PageTestUnknown
             is CheckOutcome.NoAnswerForQuestion -> AnswerCheckUi.NoAnswer(outcome.question)
         }
+    }
+
+    /** "Testi kontrol et": grades every answer collected so far against the confirmed key. */
+    fun checkTest() {
+        val keys = answerKeys ?: return
+        viewModelScope.launch {
+            val session = keys.openSession(documentId)
+            val check = SessionGrader.check(session, keys.tests(documentId))
+            if (check is SessionCheck.Checked && session != null) {
+                val graded = check.result.questions.mapNotNull { q ->
+                    val attemptId = q.attemptId ?: return@mapNotNull null
+                    AnswerKeyRepository.GradedAttempt(attemptId, q.testId, q.result ?: return@mapNotNull null)
+                }
+                keys.finishSession(session.id, graded, check.result.correct, check.result.incorrect, check.result.unanswered)
+            }
+            _sessionCheck.value = check
+        }
+    }
+
+    /** Answers on [pages] belong to [testId]: widen its question pages, then check again. */
+    fun assignPagesToTest(testId: String, pages: List<Int>) {
+        val keys = answerKeys ?: return
+        viewModelScope.launch {
+            val test = keys.tests(documentId).firstOrNull { it.id == testId } ?: return@launch
+            val all = pages + listOfNotNull(test.questionPages?.first, test.questionPages?.last)
+            keys.updateTest(testId, test.label, all.min()..all.max())
+            checkTest()
+        }
+    }
+
+    fun dismissSessionCheck() {
+        _sessionCheck.value = null
     }
 
     private fun strokeRegion(points: FloatArray): FloatArray {
@@ -230,6 +328,7 @@ class PdfViewerViewModel(
 
     private companion object {
         const val SAVE_DELAY_MILLIS = 700L
+        const val MAX_OFFERED_QUESTION = 40
         const val KEY_VIEWPORT = "viewer.viewport"
 
         fun ViewportSnapshot.toFloatArray() = floatArrayOf(pageIndex.toFloat(), pageOffsetFraction, zoom, horizontalFraction)

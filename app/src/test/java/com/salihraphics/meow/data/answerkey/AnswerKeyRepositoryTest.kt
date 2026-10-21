@@ -161,9 +161,9 @@ class AnswerKeyRepositoryTest {
     fun attemptsAreRecordedAndRemovedWithTheDocument() = runBlocking {
         repo.saveOutcome("doc", "h", outcome(test(1, answer(1, "A"), answer(2, "B"), answer(3, "C"))))
         val testId = repo.tests("doc").single().id
-        repo.recordAttempt("doc", testId, 2, 0, "B", SelectionOrigin.RECOGNIZED, AttemptResult.CORRECT, "stroke-1", floatArrayOf(0.1f, 0.2f, 0.3f, 0.4f))
+        repo.recordSelection("doc", testId, 2, 0, "B", SelectionOrigin.RECOGNIZED, "stroke-1", floatArrayOf(0.1f, 0.2f, 0.3f, 0.4f))
         val attempt = repo.observeAttempts("doc").first().single()
-        assertEquals(AttemptResult.CORRECT, attempt.result)
+        assertEquals(AttemptResult.PENDING, attempt.result)
         assertEquals("stroke-1", attempt.strokeId)
 
         repo.removeDocument("doc")
@@ -192,5 +192,130 @@ class AnswerKeyRepositoryTest {
         for (table in listOf("document_analysis", "key_tests", "key_answers", "answer_attempts")) {
             db.query("SELECT COUNT(*) FROM $table").use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
         }
+    }
+
+    @Test
+    fun upgradingFromVersion3KeepsKeysAndAttempts() {
+        val name = "upgrade3.db"
+        migrations.createDatabase(name, 3).apply {
+            execSQL(
+                "INSERT INTO key_tests (id, documentId, sourceDocumentId, label, testNumber, kind, status, sourcePages, firstQuestionPage, " +
+                    "lastQuestionPage, orderIndex, createdAt, updatedAt, deletedAt) VALUES ('t1', 'd1', 'd1', 'Test 1', 1, 'KEY_SECTION', " +
+                    "'CONFIRMED', '9', 0, 3, 0, 1, 1, NULL)",
+            )
+            execSQL(
+                "INSERT INTO key_answers (id, testId, questionNumber, type, answer, tolerance, origin, confidence, note, alternatives, " +
+                    "sourcePage, updatedAt, deletedAt) VALUES ('a1', 't1', 1, 'CHOICE', 'C', NULL, 'DETECTED', 'HIGH', NULL, NULL, 9, 1, NULL)",
+            )
+            execSQL(
+                "INSERT INTO answer_attempts (id, documentId, testId, questionNumber, pageIndex, selected, selectionOrigin, result, " +
+                    "strokeId, regionLeft, regionTop, regionRight, regionBottom, createdAt, updatedAt, deletedAt) VALUES ('x1', 'd1', 't1', " +
+                    "1, 0, 'C', 'RECOGNIZED', 'CORRECT', 's1', 0.1, 0.1, 0.2, 0.2, 1, 1, NULL)",
+            )
+            close()
+        }
+        val db = migrations.runMigrationsAndValidate(name, 4, true)
+        db.query("SELECT answer FROM key_answers WHERE id = 'a1'").use { assertTrue(it.moveToFirst()); assertEquals("C", it.getString(0)) }
+        db.query("SELECT result, sessionId, strokeRemoved FROM answer_attempts WHERE id = 'x1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("CORRECT", it.getString(0))
+            assertTrue(it.isNull(1)) // older answers belong to no session, so nothing is re-graded
+            assertEquals(0, it.getInt(2))
+        }
+        db.query("SELECT COUNT(*) FROM solving_sessions").use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
+    }
+
+    @Test
+    fun answersCollectInOneSessionUntilChecked() = runBlocking {
+        repo.recordSelection("doc", null, 1, 0, "B", SelectionOrigin.RECOGNIZED, "s1", null)
+        repo.recordSelection("doc", null, 2, 0, "D", SelectionOrigin.RECOGNIZED, "s2", null)
+        repo.recordSelection("doc", null, 1, 0, "A", SelectionOrigin.CHOSEN_BY_STUDENT, "s3", null)
+        val session = repo.openSession("doc")!!
+        assertEquals(3, session.answers.size)
+        assertEquals(listOf(1 to "A", 2 to "D"), session.latest.map { it.question to it.selected })
+        assertTrue(session.answers.all { it.result == AttemptResult.PENDING })
+        assertEquals(session, repo.observeOpenSession("doc").first())
+    }
+
+    @Test
+    fun anErasedCircleStopsCountingAndUndoBringsItBack() = runBlocking {
+        repo.recordSelection("doc", null, 1, 0, "B", SelectionOrigin.RECOGNIZED, "s1", null)
+        repo.recordSelection("doc", null, 1, 0, "A", SelectionOrigin.RECOGNIZED, "s2", null)
+        repo.strokesRemoved(listOf("s2"))
+        assertEquals(listOf("B"), repo.openSession("doc")!!.latest.map { it.selected })
+        repo.strokesRemoved(listOf("s1"))
+        assertTrue(repo.openSession("doc")!!.latest.isEmpty())
+        repo.strokesRestored(listOf("s1", "s2"))
+        assertEquals(listOf("A"), repo.openSession("doc")!!.latest.map { it.selected })
+    }
+
+    @Test
+    fun checkingStoresResultsAndTheNextAnswerStartsANewSession() = runBlocking {
+        val first = repo.recordSelection("doc", "t", 1, 0, "B", SelectionOrigin.RECOGNIZED, "s1", null)
+        val session = repo.openSession("doc")!!
+        repo.finishSession(session.id, listOf(AnswerKeyRepository.GradedAttempt(first, "t", AttemptResult.INCORRECT)), 0, 1, 3)
+        assertNull(repo.openSession("doc"))
+        assertEquals(AttemptResult.INCORRECT, repo.observeAttempts("doc").first().single().result)
+        // Erasing that circle now doesn't rewrite history.
+        repo.strokesRemoved(listOf("s1"))
+        assertEquals(1, repo.observeAttempts("doc").first().size)
+        repo.recordSelection("doc", "t", 1, 0, "C", SelectionOrigin.RECOGNIZED, "s9", null)
+        val next = repo.openSession("doc")!!
+        assertTrue(next.id != session.id)
+        assertEquals(listOf("C"), next.latest.map { it.selected })
+    }
+
+    @Test
+    fun aRescanAddsNewTestsButKeepsConfirmedAndTypedOnes() = runBlocking {
+        repo.saveOutcome("doc", "h", outcome(test(1, answer(1, "A"), answer(2, "B"), answer(3, "C"))))
+        repo.confirm("doc")
+        val typed = repo.addManualTest("doc", "Deneme", null)
+        repo.setAnswer(typed, 1, AnswerType.CHOICE, "D")
+        repo.saveOutcome("doc", "h", outcome(test(1, answer(1, "E"), answer(2, "E"), answer(3, "E")), test(2, answer(1, "B"), answer(2, "C"), answer(3, "D"))))
+        val tests = repo.tests("doc")
+        assertEquals(listOf("Test 1", "Deneme", "Test 2"), tests.map { it.label })
+        assertEquals(listOf("A", "B", "C"), tests[0].answers.map { it.value }) // confirmed: untouched, not duplicated
+        assertEquals(listOf("D"), tests[1].answers.map { it.value })
+        assertEquals(KeyTestStatus.DETECTED, tests[2].status)
+        // And again: the unconfirmed detection is replaced, not piled up.
+        repo.saveOutcome("doc", "h", outcome(test(2, answer(1, "B"), answer(2, "C"), answer(3, "D"))))
+        assertEquals(3, repo.tests("doc").size)
+    }
+
+    @Test
+    fun aKeyPdfIsStoredAsItsOwnSourceAndNamed() = runBlocking {
+        repo.saveOutcome("doc", "h", outcome())
+        val found = repo.saveKeySourceOutcome("doc", "key-1", "TYT Cevaplar", outcome(test(1, answer(1, "A"), answer(2, "B"), answer(3, "C"))))
+        assertEquals(1, found)
+        val test = repo.tests("doc").single()
+        assertEquals("key-1", test.sourceDocumentId)
+        assertNull(test.questionPages) // pages of another PDF say nothing about the book's pages
+        assertEquals(listOf("TYT Cevaplar"), repo.observeKeySources("doc").first().map { it.displayName })
+        // A rescan of the book doesn't remove what came from the key PDF.
+        repo.saveOutcome("doc", "h", outcome())
+        assertEquals(1, repo.tests("doc").size)
+    }
+
+    @Test
+    fun keyPagesTheStudentPointedAtReplaceOnlyWhatCameFromThosePages() = runBlocking {
+        val margin = DetectedTest(TestRef(5, "Test 5"), KeySourceKind.PAGE_MARGIN, listOf(40), listOf(40), listOf(answer(1, "A"), answer(2, "B")), emptyList())
+        val section = DetectedTest(TestRef(1, "Test 1"), KeySourceKind.KEY_SECTION, listOf(90), emptyList(), listOf(answer(1, "E")), emptyList())
+        repo.saveOutcome("doc", "h", outcome(margin, section))
+        val pointed = DetectedTest(TestRef(1, "Test 1"), KeySourceKind.KEY_SECTION, listOf(90), emptyList(), listOf(answer(1, "C"), answer(2, "D"), answer(3, "A")), emptyList())
+        repo.saveKeyPagesOutcome("doc", listOf(90, 91), outcome(pointed))
+        val tests = repo.tests("doc")
+        assertEquals(listOf("Test 5", "Test 1"), tests.map { it.label })
+        assertEquals(listOf("C", "D", "A"), tests[1].answers.map { it.value })
+    }
+
+    @Test
+    fun theSearchCluesAreKept() = runBlocking {
+        val result = AnswerKeyParseResult(emptyList(), com.salihraphics.meow.analysis.key.KeyClues(headingPages = listOf(230, 231), answerLines = 0))
+        repo.saveOutcome("doc", "h", AnalysisOutcome(result, 240, 200, 20, unreadablePages = listOf(5), ocrPages = listOf(239, 238)))
+        val clues = repo.analysis("doc")!!.let { com.salihraphics.meow.domain.model.AnalysisClues.decode(it.clues) }
+        assertEquals(listOf(230, 231), clues.headingPages)
+        assertEquals(listOf(5), clues.unreadablePages)
+        assertEquals(40, clues.scannedPages)
+        assertEquals(listOf(239, 238), clues.ocrPages)
     }
 }

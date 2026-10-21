@@ -17,6 +17,8 @@ interface UserPreferencesRepository {
 
     suspend fun setThemeMode(mode: ThemeMode)
 
+    suspend fun setImmediateFeedback(enabled: Boolean)
+
     /** Shows onboarding again on next navigation while keeping the saved profile. */
     suspend fun restartOnboarding()
 
