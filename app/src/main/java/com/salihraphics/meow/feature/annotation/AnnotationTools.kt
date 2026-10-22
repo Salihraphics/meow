@@ -1,0 +1,239 @@
+package com.salihraphics.meow.feature.annotation
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.salihraphics.meow.R
+import com.salihraphics.meow.core.designsystem.icon.MeowIcons
+
+private val colorNames = listOf(
+    R.string.annotation_color_black,
+    R.string.annotation_color_blue,
+    R.string.annotation_color_red,
+    R.string.annotation_color_purple,
+    R.string.annotation_color_green,
+)
+private val widthNames = listOf(R.string.annotation_width_thin, R.string.annotation_width_medium, R.string.annotation_width_thick)
+private val highlightNames = listOf(R.string.annotation_highlight_yellow, R.string.annotation_highlight_green)
+private val highlightWidthNames = listOf(R.string.annotation_highlight_narrow, R.string.annotation_highlight_medium, R.string.annotation_highlight_wide)
+
+/** What the tool controls can do; one set for the tablet panel and the phone rail. */
+class AnnotationActions(
+    val onTool: (AnnotationTool?) -> Unit = {},
+    val onColor: (Int) -> Unit = {},
+    val onWidth: (Int) -> Unit = {},
+    val onHighlightColor: (Int) -> Unit = {},
+    val onHighlightWidth: (Int) -> Unit = {},
+    val onUndo: () -> Unit = {},
+    val onRedo: () -> Unit = {},
+) {
+    companion object {
+        fun of(session: AnnotationSession, onUndo: () -> Unit, onRedo: () -> Unit) = AnnotationActions(
+            onTool = session::selectTool,
+            onColor = session::selectColor,
+            onWidth = session::selectWidth,
+            onHighlightColor = session::selectHighlightColor,
+            onHighlightWidth = session::selectHighlightWidth,
+            onUndo = onUndo,
+            onRedo = onRedo,
+        )
+    }
+}
+
+/**
+ * The tools in the study panel: navigate / pen / highlighter / eraser, undo / redo, and the
+ * settings of the selected tool. Part of the panel, never over the page.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AnnotationToolsSection(state: AnnotationToolState, actions: AnnotationActions, modifier: Modifier = Modifier) {
+    val toolbarLabel = stringResource(R.string.annotation_toolbar)
+    Column(modifier.semantics { contentDescription = toolbarLabel }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.selectableGroup()) { ToolButtons(state, actions) }
+            Spacer(Modifier.weight(1f))
+            UndoRedo(state, actions)
+        }
+        when (state.tool) {
+            AnnotationTool.PEN -> {
+                Spacer(Modifier.height(6.dp))
+                FlowRow(verticalArrangement = Arrangement.Center) { PenColors(state, actions) }
+                FlowRow { PenWidths(state, actions) }
+            }
+            AnnotationTool.HIGHLIGHTER -> {
+                Spacer(Modifier.height(6.dp))
+                FlowRow { HighlightColors(state, actions); Spacer(Modifier.width(8.dp)); HighlightWidths(state, actions) }
+            }
+            else -> Unit
+        }
+        if (state.tool != null) {
+            Text(
+                stringResource(R.string.annotation_two_finger_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Phones: the tools in a slim column docked at the right edge of the screen, beside the pages
+ * (never over them). [onAddNote] and [onOpenPanel] lead to notes and the full study panel.
+ */
+@Composable
+fun AnnotationToolRail(
+    state: AnnotationToolState,
+    actions: AnnotationActions,
+    onAddNote: () -> Unit,
+    onOpenPanel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val toolbarLabel = stringResource(R.string.annotation_toolbar)
+    Column(
+        modifier
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 4.dp)
+            .semantics { contentDescription = toolbarLabel },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        IconButton(onClick = onOpenPanel) { Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.study_panel_open)) }
+        Column(Modifier.selectableGroup(), horizontalAlignment = Alignment.CenterHorizontally) { ToolButtons(state, actions) }
+        IconButton(onClick = onAddNote) { Icon(MeowIcons.StickyNote, contentDescription = stringResource(R.string.note_add)) }
+        HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        IconButton(onClick = actions.onUndo, enabled = state.canUndo) { Icon(MeowIcons.Undo, contentDescription = stringResource(R.string.annotation_undo)) }
+        IconButton(onClick = actions.onRedo, enabled = state.canRedo) { Icon(MeowIcons.Redo, contentDescription = stringResource(R.string.annotation_redo)) }
+        when (state.tool) {
+            AnnotationTool.PEN -> {
+                HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { PenColors(state, actions) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { PenWidths(state, actions) }
+            }
+            AnnotationTool.HIGHLIGHTER -> {
+                HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { HighlightColors(state, actions) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { HighlightWidths(state, actions) }
+            }
+            else -> Unit
+        }
+    }
+}
+
+@Composable
+private fun ToolButtons(state: AnnotationToolState, actions: AnnotationActions) {
+    ToolButton(MeowIcons.Hand, stringResource(R.string.annotation_tool_navigate), state.tool == null) { actions.onTool(null) }
+    ToolButton(Icons.Filled.Create, stringResource(R.string.annotation_tool_pen), state.tool == AnnotationTool.PEN) { actions.onTool(AnnotationTool.PEN) }
+    ToolButton(MeowIcons.Highlighter, stringResource(R.string.annotation_tool_highlighter), state.tool == AnnotationTool.HIGHLIGHTER) {
+        actions.onTool(AnnotationTool.HIGHLIGHTER)
+    }
+    ToolButton(MeowIcons.Eraser, stringResource(R.string.annotation_tool_eraser), state.tool == AnnotationTool.ERASER) { actions.onTool(AnnotationTool.ERASER) }
+}
+
+@Composable
+private fun UndoRedo(state: AnnotationToolState, actions: AnnotationActions) {
+    IconButton(onClick = actions.onUndo, enabled = state.canUndo) { Icon(MeowIcons.Undo, contentDescription = stringResource(R.string.annotation_undo)) }
+    IconButton(onClick = actions.onRedo, enabled = state.canRedo) { Icon(MeowIcons.Redo, contentDescription = stringResource(R.string.annotation_redo)) }
+}
+
+@Composable
+private fun ToolButton(icon: ImageVector, label: String, selected: Boolean, onSelect: () -> Unit) {
+    IconToggleButton(
+        checked = selected,
+        onCheckedChange = { onSelect() },
+        colors = IconButtonDefaults.iconToggleButtonColors(
+            checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) {
+        Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun PenColors(state: AnnotationToolState, actions: AnnotationActions) {
+    AnnotationToolState.PEN_COLORS.forEachIndexed { index, color ->
+        Swatch(selected = index == state.colorIndex, label = stringResource(colorNames[index]), onClick = { actions.onColor(index) }) {
+            Box(Modifier.size(22.dp).background(Color(color), CircleShape))
+        }
+    }
+}
+
+@Composable
+private fun PenWidths(state: AnnotationToolState, actions: AnnotationActions) {
+    AnnotationToolState.PEN_WIDTHS.forEachIndexed { index, _ ->
+        Swatch(selected = index == state.widthIndex, label = stringResource(widthNames[index]), onClick = { actions.onWidth(index) }) {
+            Box(Modifier.size(listOf(6.dp, 10.dp, 15.dp)[index]).background(Color(state.penStyle.color), CircleShape))
+        }
+    }
+}
+
+@Composable
+private fun HighlightColors(state: AnnotationToolState, actions: AnnotationActions) {
+    AnnotationToolState.HIGHLIGHT_COLORS.forEachIndexed { index, color ->
+        Swatch(selected = index == state.highlightColorIndex, label = stringResource(highlightNames[index]), onClick = { actions.onHighlightColor(index) }) {
+            Box(Modifier.size(24.dp, 14.dp).background(Color(color).copy(alpha = 0.9f), RoundedCornerShape(3.dp)))
+        }
+    }
+}
+
+@Composable
+private fun HighlightWidths(state: AnnotationToolState, actions: AnnotationActions) {
+    val sizes: List<Dp> = listOf(6.dp, 11.dp, 17.dp)
+    AnnotationToolState.HIGHLIGHT_WIDTHS.forEachIndexed { index, _ ->
+        Swatch(selected = index == state.highlightWidthIndex, label = stringResource(highlightWidthNames[index]), onClick = { actions.onHighlightWidth(index) }) {
+            Box(Modifier.size(22.dp, sizes[index]).background(Color(state.highlightStyle.color).copy(alpha = 0.9f), RoundedCornerShape(2.dp)))
+        }
+    }
+}
+
+@Composable
+private fun Swatch(selected: Boolean, label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+    val ring = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+    Box(
+        Modifier
+            .size(44.dp)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(34.dp).border(2.dp, ring, CircleShape), contentAlignment = Alignment.Center) { content() }
+    }
+}

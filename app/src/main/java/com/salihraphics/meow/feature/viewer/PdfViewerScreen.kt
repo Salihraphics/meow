@@ -1,10 +1,24 @@
 package com.salihraphics.meow.feature.viewer
 
-import android.text.format.Formatter
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.ui.window.Dialog
+import com.salihraphics.meow.domain.model.StickyNote
+import com.salihraphics.meow.feature.annotation.AnnotationActions
+import com.salihraphics.meow.feature.annotation.AnnotationToolRail
+import com.salihraphics.meow.feature.annotation.PageNotesLayer
+import com.salihraphics.meow.feature.study.StudyTimerController
 import androidx.compose.runtime.remember
-import com.salihraphics.meow.feature.annotation.AnnotationToolbar
 import com.salihraphics.meow.feature.check.AnswerCheckCard
 import com.salihraphics.meow.feature.check.AnswerCheckUi
 import com.salihraphics.meow.domain.model.AnswerAttempt
@@ -14,7 +28,6 @@ import com.salihraphics.meow.feature.check.SessionCheck
 import com.salihraphics.meow.feature.check.SessionCheckDialog
 import androidx.compose.material.icons.filled.CheckCircle
 import com.salihraphics.meow.feature.annotation.PageAnnotationLayer
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,18 +43,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +67,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -69,7 +76,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.salihraphics.meow.R
 import com.salihraphics.meow.core.designsystem.adaptive.LocalMeowWindow
@@ -79,18 +85,20 @@ import com.salihraphics.meow.core.designsystem.component.MeowButtonStyle
 import com.salihraphics.meow.core.designsystem.component.MeowPrimaryButton
 import com.salihraphics.meow.core.mascot.MascotMood
 import com.salihraphics.meow.core.mascot.MeowCat
-import com.salihraphics.meow.domain.model.PdfDocument
 import kotlinx.coroutines.launch
-import java.text.DateFormat
-import java.util.Date
-import kotlin.math.roundToInt
 
 @Composable
-fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit, onOpenAnswerKey: (() -> Unit)? = null) {
+fun PdfViewerRoute(
+    viewModel: PdfViewerViewModel,
+    onBack: () -> Unit,
+    onOpenAnswerKey: (() -> Unit)? = null,
+    studyTimer: StudyTimerController? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val answerCheck by viewModel.answerCheck.collectAsStateWithLifecycle()
     val solving by viewModel.solving.collectAsStateWithLifecycle()
     val sessionCheck by viewModel.sessionCheck.collectAsStateWithLifecycle()
+    val rotation by viewModel.rotation.collectAsStateWithLifecycle()
     PdfViewerContent(
         state = state,
         initialViewport = viewModel::initialViewport,
@@ -109,10 +117,11 @@ fun PdfViewerRoute(viewModel: PdfViewerViewModel, onBack: () -> Unit, onOpenAnsw
             onClearQuestion = viewModel::clearQuestion,
             onOpenAnswerKey = onOpenAnswerKey,
         ),
+        workspace = ViewerWorkspace(rotation, viewModel::setRotation, studyTimer),
     )
 }
 
-/** Answer marking state shown over the pages. */
+/** Answer marking state shown in the study panel. */
 data class ViewerAnswers(
     val check: AnswerCheckUi? = null,
     /** Answers collected and not yet checked, the latest per question. */
@@ -135,6 +144,13 @@ class ViewerAnswerActions(
     val onOpenAnswerKey: (() -> Unit)? = null,
 )
 
+/** How the pages are turned, and the study timer; a null timer hides it. */
+class ViewerWorkspace(
+    val rotation: Int = 0,
+    val onRotationChange: (Int) -> Unit = {},
+    val timer: StudyTimerController? = null,
+)
+
 @Composable
 fun PdfViewerContent(
     state: ViewerUiState,
@@ -144,15 +160,16 @@ fun PdfViewerContent(
     onBack: () -> Unit,
     answers: ViewerAnswers = ViewerAnswers(),
     answerActions: ViewerAnswerActions = ViewerAnswerActions(),
+    workspace: ViewerWorkspace = ViewerWorkspace(),
 ) {
-    Column(
+    Box(
         Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         when (state) {
-            ViewerUiState.Loading -> {
-                ViewerTopBar(title = "", onBack = onBack)
+            ViewerUiState.Loading -> Column {
+                ViewerTopBar(onBack = onBack) {}
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
@@ -161,15 +178,20 @@ fun PdfViewerContent(
                     }
                 }
             }
-            is ViewerUiState.Error -> {
-                ViewerTopBar(title = "", onBack = onBack)
+            is ViewerUiState.Error -> Column {
+                ViewerTopBar(onBack = onBack) {}
                 ViewerErrorMessage(state.error, onBack)
             }
-            is ViewerUiState.Ready -> ReadyViewer(state, initialViewport, onViewportChanged, onPageChanged, onBack, answers, answerActions)
+            is ViewerUiState.Ready -> ReadyViewer(state, initialViewport, onViewportChanged, onPageChanged, onBack, answers, answerActions, workspace)
         }
     }
 }
 
+/**
+ * The pages on the left, every study tool on the right. Nothing is ever drawn over the pages:
+ * on tablets and in landscape the right side is the study panel; on phones it is a slim tool
+ * rail, and the full panel opens as a drawer.
+ */
 @Composable
 private fun ReadyViewer(
     state: ViewerUiState.Ready,
@@ -179,6 +201,7 @@ private fun ReadyViewer(
     onBack: () -> Unit,
     answers: ViewerAnswers,
     actions: ViewerAnswerActions,
+    workspace: ViewerWorkspace,
 ) {
     // Phone and side-panel layouts share this one state, so switching between them on
     // rotation keeps the position too.
@@ -187,99 +210,126 @@ private fun ReadyViewer(
     val scope = rememberCoroutineScope()
     var askingPage by rememberSaveable { mutableStateOf(false) }
     var showingSheet by rememberSaveable { mutableStateOf(false) }
+    var drawerOpen by rememberSaveable { mutableStateOf(false) }
     val window = LocalMeowWindow.current
     val sidePanel = window.useTwoPanes || window.width == WidthClass.Expanded
     val pageCount = state.loader.pageCount
-    val tools by state.annotations.tools.collectAsStateWithLifecycle()
+    val session = state.annotations
+    val tools by session.tools.collectAsStateWithLifecycle()
+    val editingNote by session.editingNote.collectAsStateWithLifecycle()
     val drawing = tools.tool != null
+    val rotation = workspace.rotation
 
-    val pages = @Composable { modifier: Modifier ->
-        PdfPagesView(
-            loader = state.loader,
-            state = viewport,
-            modifier = modifier.pdfBackdrop(),
-            drawingActive = drawing,
-            pageOverlay = { page -> PageAnnotationLayer(page, state.annotations, tools) },
-        )
+    // An undo on a page that's off screen scrolls there, so the change is never invisible.
+    val toolActions = AnnotationActions.of(
+        session,
+        onUndo = { session.undo()?.let { page -> scope.launch { reveal(viewport, page) } } },
+        onRedo = { session.redo()?.let { page -> scope.launch { reveal(viewport, page) } } },
+    )
+    val addNote = {
+        drawerOpen = false
+        session.addNote(viewport.currentPage)
+        Unit
     }
-    val toolbar = @Composable {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            answers.check?.let { check ->
+    val panel = StudyPanelState(
+        document = state.document,
+        viewport = viewport,
+        pageCount = pageCount,
+        tools = tools,
+        toolActions = toolActions,
+        session = session,
+        workspace = workspace,
+        onGoToPage = { askingPage = true },
+        onAddNote = addNote,
+    )
+
+    Column(Modifier.fillMaxSize()) {
+        ViewerTopBar(onBack = onBack, title = {
+            Column {
+                Text(
+                    state.document.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { heading() },
+                )
+                if (!sidePanel) {
+                    Text(
+                        stringResource(R.string.viewer_page_indicator, viewport.currentPage + 1, pageCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clickable { askingPage = true },
+                    )
+                }
+            }
+        }) {
+            actions.onOpenAnswerKey?.let { openKey ->
+                IconButton(onClick = openKey) {
+                    Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.answer_key_title))
+                }
+            }
+        }
+        if (!sidePanel) PhoneAnswerStrip(answers, actions, onShowAnswers = { showingSheet = true })
+        Row(Modifier.fillMaxSize()) {
+            PdfPagesView(
+                loader = state.loader,
+                state = viewport,
+                modifier = Modifier.weight(1f).fillMaxHeight().pdfBackdrop(),
+                drawingActive = drawing,
+                rotation = rotation,
+                onTap = { session.selectNote(null) },
+                pageOverlay = { page ->
+                    PageAnnotationLayer(page, session, tools)
+                    PageNotesLayer(page, session, rotation)
+                },
+            )
+            if (sidePanel) {
+                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                StudyPanel(
+                    panel,
+                    modifier = Modifier.width(if (window.shortHeight) 300.dp else 340.dp).fillMaxHeight(),
+                    header = { PanelAnswers(answers, actions, onShowAnswers = { showingSheet = true }) },
+                )
+            } else {
+                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                AnnotationToolRail(
+                    state = tools,
+                    actions = toolActions,
+                    onAddNote = addNote,
+                    onOpenPanel = { drawerOpen = true },
+                    modifier = Modifier.width(56.dp).fillMaxHeight(),
+                )
+            }
+        }
+    }
+
+    if (!sidePanel) {
+        PanelDrawer(open = drawerOpen, onClose = { drawerOpen = false }) {
+            StudyPanel(panel, Modifier.fillMaxSize(), header = {})
+        }
+        // Phones: a question about a mark, or a result, asks in a dialog rather than over the page.
+        val check = answers.check
+        if (check != null && check !is AnswerCheckUi.Recorded) {
+            Dialog(onDismissRequest = actions.onDismissCheck) {
                 AnswerCheckCard(
                     check = check,
                     onChoose = actions.onChooseOption,
                     onChooseQuestion = actions.onChooseQuestion,
                     onDismiss = actions.onDismissCheck,
                     onOpenKey = { actions.onDismissCheck(); actions.onOpenAnswerKey?.invoke() },
-                    modifier = Modifier.padding(bottom = 10.dp),
                     onUndo = actions.onUndoAnswer,
                 )
             }
-            if (answers.answered > 0 && answers.check !is AnswerCheckUi.Ask) {
-                SessionBar(answers.answered, actions.onCheckTest, Modifier.padding(bottom = 10.dp), onShowAnswers = { showingSheet = true })
-            }
-            TwoFingerHint(visible = drawing)
-            AnnotationToolbar(
-                state = tools,
-                onTool = state.annotations::selectTool,
-                onColor = state.annotations::selectColor,
-                onWidth = state.annotations::selectWidth,
-                // An undo on a page that's off screen scrolls there, so the change is never invisible.
-                onUndo = { state.annotations.undo()?.let { page -> scope.launch { reveal(viewport, page) } } },
-                onRedo = { state.annotations.redo()?.let { page -> scope.launch { reveal(viewport, page) } } },
-            )
         }
     }
 
-    ViewerTopBar(
-        title = state.document.displayName,
-        onBack = onBack,
-        actions = {
-            if (!sidePanel) ZoomButtons(viewport)
-            actions.onOpenAnswerKey?.let { openKey ->
-                IconButton(onClick = openKey) {
-                    Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.answer_key_title))
-                }
-            }
-        },
-    )
-    if (sidePanel) {
-        Row(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                pages(Modifier.fillMaxSize())
-                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)) { toolbar() }
-            }
-            SidePanel(
-                document = state.document,
-                viewport = viewport,
-                pageCount = pageCount,
-                onGoToPage = { askingPage = true },
-                modifier = Modifier.width(if (window.shortHeight) 280.dp else 340.dp).fillMaxHeight(),
-            )
-        }
-    } else {
-        Box(Modifier.fillMaxSize()) {
-            pages(Modifier.fillMaxSize())
-            Column(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Surface(
-                    onClick = { askingPage = true },
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
-                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                ) {
-                    Text(
-                        stringResource(R.string.viewer_page_indicator, viewport.currentPage + 1, pageCount),
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                toolbar()
-            }
-        }
+    editingNote?.let { note ->
+        NoteEditDialog(
+            note = note,
+            onSave = { text -> session.updateNote(note.copy(text = text)); session.editNote(null) },
+            onDelete = { session.deleteNote(note); session.editNote(null) },
+            onDismiss = { session.editNote(null) },
+        )
     }
 
     if (showingSheet && answers.recorded.isNotEmpty()) {
@@ -319,35 +369,92 @@ private fun ReadyViewer(
     }
 }
 
-private suspend fun reveal(viewport: PdfViewportState, page: Int) {
-    if (!viewport.isPageVisible(page)) viewport.goToPage(page)
-}
-
-/** One finger draws while a tool is active, so say how to move around; shown briefly. */
+/** Tablets: the latest answer reading and the "Testi kontrol et" bar, at the top of the panel. */
 @Composable
-private fun TwoFingerHint(visible: Boolean) {
-    var show by remember { mutableStateOf(false) }
-    LaunchedEffect(visible) {
-        show = visible
-        if (visible) {
-            delay(3_500)
-            show = false
-        }
-    }
-    AnimatedVisibility(show) {
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-            modifier = Modifier.padding(bottom = 8.dp),
-        ) {
-            Text(
-                stringResource(R.string.annotation_two_finger_hint),
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+private fun PanelAnswers(answers: ViewerAnswers, actions: ViewerAnswerActions, onShowAnswers: () -> Unit) {
+    val check = answers.check
+    if (check == null && answers.answered == 0) return
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        check?.let {
+            AnswerCheckCard(
+                check = it,
+                onChoose = actions.onChooseOption,
+                onChooseQuestion = actions.onChooseQuestion,
+                onDismiss = actions.onDismissCheck,
+                onOpenKey = { actions.onDismissCheck(); actions.onOpenAnswerKey?.invoke() },
+                modifier = Modifier.padding(bottom = 8.dp),
+                onUndo = actions.onUndoAnswer,
             )
         }
+        if (answers.answered > 0 && check !is AnswerCheckUi.Ask) {
+            // Stacked: the panel is too narrow for the phone strip's single row.
+            TextButton(onClick = onShowAnswers) {
+                Text(stringResource(R.string.session_answers, answers.answered), style = MaterialTheme.typography.labelLarge)
+            }
+            Button(onClick = actions.onCheckTest, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                Text(stringResource(R.string.session_check), maxLines = 1)
+            }
+        }
     }
+}
+
+/**
+ * Phones: answers in a strip docked under the top bar, beside nothing and over nothing; it
+ * pushes the pages down. Shown once there are answers: the latest reading with "Geri al", and
+ * "Testi kontrol et".
+ */
+@Composable
+private fun PhoneAnswerStrip(answers: ViewerAnswers, actions: ViewerAnswerActions, onShowAnswers: () -> Unit) {
+    val recorded = answers.check as? AnswerCheckUi.Recorded
+    if (recorded == null && answers.answered == 0) return
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            recorded?.let {
+                AnswerCheckCard(it, {}, {}, actions.onDismissCheck, {}, Modifier.padding(bottom = 4.dp), onUndo = actions.onUndoAnswer)
+            }
+            if (answers.answered > 0) SessionBar(answers.answered, actions.onCheckTest, onShowAnswers = onShowAnswers)
+        }
+    }
+}
+
+/** Phones: the full study panel sliding in from the right edge, over a scrim. */
+@Composable
+private fun PanelDrawer(open: Boolean, onClose: () -> Unit, content: @Composable () -> Unit) {
+    BackHandler(enabled = open, onBack = onClose)
+    Box(Modifier.fillMaxSize()) {
+        AnimatedVisibility(open, enter = fadeIn(), exit = fadeOut()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+            )
+        }
+        AnimatedVisibility(
+            open,
+            modifier = Modifier.align(Alignment.CenterEnd),
+            enter = slideInHorizontally { it },
+            exit = slideOutHorizontally { it },
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxHeight().widthIn(max = 360.dp).fillMaxWidth(0.88f),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 8.dp,
+            ) {
+                Column {
+                    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.study_panel), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.study_panel_close)) }
+                    }
+                    content()
+                }
+            }
+        }
+    }
+}
+
+private suspend fun reveal(viewport: PdfViewportState, page: Int) {
+    if (!viewport.isPageVisible(page)) viewport.goToPage(page)
 }
 
 @Composable
@@ -356,112 +463,43 @@ private fun Modifier.pdfBackdrop() = this.then(
 )
 
 @Composable
-private fun ViewerTopBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun ViewerTopBar(onBack: () -> Unit, title: @Composable () -> Unit = {}, actions: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
         }
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).semantics { heading() },
-        )
+        Box(Modifier.weight(1f)) { title() }
         actions()
     }
 }
 
 @Composable
-private fun ZoomButtons(viewport: PdfViewportState) {
-    val scope = rememberCoroutineScope()
-    val zoomOut = stringResource(R.string.viewer_zoom_out)
-    val zoomIn = stringResource(R.string.viewer_zoom_in)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { scope.launch { viewport.zoomOut() } }, enabled = viewport.zoom > PdfViewportState.MIN_ZOOM) {
-            Text("−", fontSize = 24.sp, modifier = Modifier.semantics { contentDescription = zoomOut })
-        }
-        Text(
-            stringResource(R.string.viewer_zoom_level, (viewport.zoom * 100).roundToInt()),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        IconButton(onClick = { scope.launch { viewport.zoomIn() } }, enabled = viewport.zoom < PdfViewportState.MAX_ZOOM) {
-            Text("+", fontSize = 24.sp, modifier = Modifier.semantics { contentDescription = zoomIn })
-        }
-    }
+private fun NoteEditDialog(note: StickyNote, onSave: (String) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable(note.id) { mutableStateOf(note.text) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.note_edit)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(MAX_NOTE_LENGTH) },
+                label = { Text(stringResource(R.string.note_text_label)) },
+                minLines = 3,
+                maxLines = 8,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(text.trim()) }) { Text(stringResource(R.string.note_save)) } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDelete) { Text(stringResource(R.string.note_delete), color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            }
+        },
+    )
 }
 
-@Composable
-private fun SidePanel(
-    document: PdfDocument,
-    viewport: PdfViewportState,
-    pageCount: Int,
-    onGoToPage: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val page = viewport.currentPage
-    Column(
-        modifier
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-    ) {
-        Text(
-            stringResource(R.string.viewer_info_heading),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(document.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        Text(
-            stringResource(R.string.viewer_info_pages, pageCount, Formatter.formatShortFileSize(context, document.sizeBytes)),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            stringResource(R.string.viewer_info_imported, DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(document.importedAt))),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        HorizontalDivider(Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-        Text(
-            stringResource(R.string.viewer_page_indicator, page + 1, pageCount),
-            style = MaterialTheme.typography.headlineMedium,
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { scope.launch { viewport.goToPage(page - 1) } }, enabled = page > 0) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.viewer_previous_page))
-            }
-            IconButton(onClick = { scope.launch { viewport.goToPage(page + 1) } }, enabled = page < pageCount - 1) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.viewer_next_page))
-            }
-            Spacer(Modifier.width(4.dp))
-            TextButton(onClick = onGoToPage) { Text(stringResource(R.string.viewer_go_to_page)) }
-        }
-        Spacer(Modifier.height(8.dp))
-        ZoomButtons(viewport)
-
-        HorizontalDivider(Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-        // Honest placeholder: describes what comes next, offers no controls that don't work yet.
-        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
-            Column(Modifier.padding(16.dp)) {
-                Text(stringResource(R.string.viewer_next_steps_heading), style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.viewer_next_steps_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
+private const val MAX_NOTE_LENGTH = 1_000
 
 @Composable
 private fun GoToPageDialog(pageCount: Int, onDismiss: () -> Unit, onGo: (Int) -> Unit) {

@@ -24,4 +24,25 @@ interface StrokeDao {
 
     @Query("UPDATE annotation_strokes SET deletedAt = :now, updatedAt = :now WHERE documentId = :documentId AND deletedAt IS NULL")
     suspend fun markDocumentDeleted(documentId: String, now: Long)
+
+    @Query(
+        "SELECT * FROM sticky_notes WHERE documentId = :documentId AND pageIndex = :pageIndex " +
+            "AND deletedAt IS NULL ORDER BY createdAt, rowid",
+    )
+    suspend fun notesOnPage(documentId: String, pageIndex: Int): List<StickyNoteEntity>
+
+    @Query("SELECT * FROM sticky_notes WHERE id = :id")
+    suspend fun note(id: String): StickyNoteEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putNote(note: StickyNoteEntity)
+
+    @Query("UPDATE sticky_notes SET deletedAt = :now, updatedAt = :now WHERE id = :id AND deletedAt IS NULL")
+    suspend fun deleteNote(id: String, now: Long)
+
+    @Query("UPDATE sticky_notes SET deletedAt = NULL, updatedAt = :now WHERE id = :id")
+    suspend fun restoreNote(id: String, now: Long)
+
+    @Query("UPDATE sticky_notes SET deletedAt = :now, updatedAt = :now WHERE documentId = :documentId AND deletedAt IS NULL")
+    suspend fun markDocumentNotesDeleted(documentId: String, now: Long)
 }

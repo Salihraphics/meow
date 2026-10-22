@@ -1,5 +1,6 @@
 package com.salihraphics.meow.data.library.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -23,6 +24,8 @@ data class PdfDocumentEntity(
     val lastPageIndex: Int,
     val updatedAt: Long,
     val deletedAt: Long?,
+    /** Viewer rotation in degrees clockwise (0, 90, 180, 270); the PDF itself is never changed. */
+    @ColumnInfo(defaultValue = "0") val viewRotation: Int = 0,
 ) {
     fun toDomain() = PdfDocument(
         id = id,
@@ -33,5 +36,6 @@ data class PdfDocumentEntity(
         importedAt = importedAt,
         lastOpenedAt = lastOpenedAt,
         lastPageIndex = lastPageIndex,
+        viewRotation = viewRotation,
     )
 }

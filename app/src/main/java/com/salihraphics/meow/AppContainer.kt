@@ -24,6 +24,7 @@ import com.salihraphics.meow.data.pdf.AndroidPdfRenderSession
 import com.salihraphics.meow.data.pdf.PdfRenderSessionFactory
 import com.salihraphics.meow.data.preferences.DataStoreUserPreferencesRepository
 import com.salihraphics.meow.data.preferences.UserPreferencesRepository
+import com.salihraphics.meow.feature.study.StudyTimerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -96,6 +97,9 @@ class AppContainer(context: Context) {
     }
 
     val pdfRenderSessionFactory: PdfRenderSessionFactory = AndroidPdfRenderSession.Factory
+
+    /** One study timer for the whole app; keeps running while the student moves between PDFs. */
+    val studyTimer: StudyTimerController by lazy { StudyTimerController(database.study(), applicationScope) }
 
     init {
         // No import can be running yet, so anything left in "incoming" is from an interrupted one.

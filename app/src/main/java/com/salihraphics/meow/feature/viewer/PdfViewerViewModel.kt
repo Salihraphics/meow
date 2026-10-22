@@ -77,6 +77,11 @@ class PdfViewerViewModel(
 
     private var session: PdfRenderSession? = null
 
+    private val _rotation = MutableStateFlow(0)
+
+    /** How the student turned the pages (degrees clockwise); remembered per PDF. */
+    val rotation: StateFlow<Int> = _rotation.asStateFlow()
+
     /** Strokes, tool and undo history; here so rotation keeps them. */
     // Answers are kept apart from drawings: erasing or undoing a circle leaves its answer saved.
     // An answer changes by circling another option, "Geri al" on its note, or the answer sheet.
@@ -156,6 +161,7 @@ class PdfViewerViewModel(
         viewport = restored ?: ViewportSnapshot(pageIndex = start)
         currentPage = start
         repository.recordReading(documentId, start)
+        _rotation.value = PageRotation.normalize(document.viewRotation)
         _state.value = ViewerUiState.Ready(document, SessionPageLoader(opened), start, annotations)
     }
 
@@ -166,6 +172,14 @@ class PdfViewerViewModel(
     fun onViewportChanged(snapshot: ViewportSnapshot) {
         viewport = snapshot
         savedState[KEY_VIEWPORT] = snapshot.toFloatArray()
+    }
+
+    /** Turns the pages; only the view changes, never the PDF or the stored annotations. */
+    fun setRotation(degrees: Int) {
+        val turn = PageRotation.normalize(degrees)
+        if (turn == _rotation.value) return
+        _rotation.value = turn
+        applicationScope.launch { repository.setViewRotation(documentId, turn) }
     }
 
     /** Called as the student scrolls; saved after a short pause so scrolling stays cheap. */

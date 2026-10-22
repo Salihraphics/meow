@@ -14,6 +14,7 @@ keys must still be there after updating.
 - [ ] Circle question 1 again with a different option; the later one counts (check in step 2).
 - [ ] Zoom to 200%, pan, circle an option; the question is still right. Rotate the device to
       landscape and back; the circles stay on their options and nothing is lost.
+- [ ] Turn the page view with "Sağa döndür" and circle an option: the question is still right.
 - [ ] Draw a big loop, a line of working, or a note: nothing is recorded, it stays a drawing.
 - [ ] Circle two options at once: MEOW asks "hangi şıkkı işaretledin?". Choose one; "Cevap değil"
       leaves it a drawing.
@@ -61,9 +62,43 @@ keys must still be there after updating.
 - [ ] A scanned PDF: the search takes longer (OCR) but the app stays responsive; cancel by
       removing the PDF from the library.
 
-## 4. Nothing else broke
+## 4. Study workspace
+- [ ] Tablet (and phone in landscape): the PDF fills the left side; **no toolbar, chip or card
+      appears over the PDF or along its bottom**, at 50 %, 100 % and 400 % and in every rotation.
+- [ ] Tablet: every tool is in the right panel: Gezin, Kalem, Fosforlu kalem, Silgi, Geri al,
+      Yinele, pen colours and widths, highlighter colours and widths, Not ekle, the timer with the
+      cat, page / zoom / rotation controls. The panel scrolls when the screen is short.
+- [ ] Phone portrait: the tool rail at the right edge works one-handed; "Çalışma paneli" opens
+      the drawer with timer, notes, zoom and rotation; back or the scrim closes it.
+- [ ] Zoom: − goes down to 50 % (two pages visible), + up to 400 %; pinch and double-tap still work.
+- [ ] Rotation: "Sağa döndür" / "Sola döndür" turn pages; "Orijinal yön" resets. Ink, highlights
+      and notes stay on the same printed words after turning, zooming, scrolling to another page
+      and coming back. Leave the PDF and reopen it: same turn, everything still aligned.
+- [ ] Draw and highlight on a turned page, then reset the turn: the marks are where you made them.
+- [ ] Highlighter: yellow and green, three widths; the text stays readable under it. The eraser
+      removes it; undo/redo work. Highlighting an option never records an answer.
+- [ ] Notes: "Not ekle", type, "Kaydet". Drag it, resize it from the corner, tap it twice to edit,
+      × to delete, "Geri al" to bring it back. With the pen selected, dragging on a note moves it
+      and never draws under it. Reopen the PDF: notes in the same place with the same text.
+- [ ] With a stylus: pen and highlighter draw; a palm resting on the screen (note what happens).
+- [ ] Timer: Başlat, Duraklat, Devam et, Sıfırla; − / + change the length (25 by default).
+      The countdown keeps correct time with the screen off and with the app in the background
+      for a few minutes. Let a short (5 min) session finish while the app is open: it says
+      Tamamlandı and the cat celebrates; "Bugün … çalıştın · 1 oturum tamamlandı".
+- [ ] Start the timer, swipe MEOW away from recents (or force-stop), reopen: the timer is paused
+      at about where you left it, not completed, and nothing extra was counted.
+- [ ] End a session early after a few minutes: a gentle message with the minutes. The cat says
+      different things on repeated taps, falls asleep after a few idle minutes, and wakes on tap.
+
+## 5. Your data after updating
+- [ ] Update over the previous version (`adb install -r`, do not uninstall): the library, last
+      pages, drawings, marked answers, confirmed keys and corrections are all still there.
+
+## 6. Nothing else broke
 - [ ] Reading, scrolling, zooming, go-to-page, and last-read page work as before.
 - [ ] Pen, eraser, colours, undo/redo work on pages with and without questions.
-- [ ] Tablet (or phone in landscape): the side panel, the answer bar and dialogs fit.
+- [ ] Tablet (or phone in landscape): the side panel, the answer section and dialogs fit.
+- [ ] Phone: the answer strip under the top bar ("Soru N: X işaretlendi · Geri al", "Testi kontrol
+      et") pushes the pages down and covers nothing.
 
 Report anything unexpected with the page number and a screenshot.

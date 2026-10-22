@@ -196,7 +196,8 @@ class PdfViewportState(initial: ViewportSnapshot) {
     private fun viewportCentre() = Offset(viewportSize.width / 2f, viewportSize.height / 2f)
 
     companion object {
-        const val MIN_ZOOM = 1f
+        /** Down to half size, to see a whole page (or two) at once on a small screen. */
+        const val MIN_ZOOM = 0.5f
         const val MAX_ZOOM = 4f
         const val ZOOM_STEP = 1.25f
     }
@@ -241,10 +242,15 @@ fun PdfPagesView(
      * zoom. While false, everything behaves as a plain reader.
      */
     drawingActive: Boolean = false,
+    /** How the pages are turned, degrees clockwise; the overlay turns with them. */
+    rotation: Int = 0,
+    /** A single tap on the pages that nothing on them took (e.g. not on a note). */
+    onTap: () -> Unit = {},
     pageOverlay: @Composable BoxScope.(pageIndex: Int) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val drawing by rememberUpdatedState(drawingActive)
+    val latestOnTap by rememberUpdatedState(onTap)
     val density = LocalDensity.current
     BoxWithConstraints(
         modifier
@@ -276,10 +282,13 @@ fun PdfPagesView(
                 }
             }
             .pointerInput(state) {
-                detectTapGestures(onDoubleTap = { at ->
-                    // While drawing, two quick taps are two dots, not a zoom.
-                    if (!drawing) scope.launch { state.zoomTo(if (state.zoom > 1.2f) 1f else 2f, at) }
-                })
+                detectTapGestures(
+                    onTap = { latestOnTap() },
+                    onDoubleTap = { at ->
+                        // While drawing, two quick taps are two dots, not a zoom.
+                        if (!drawing) scope.launch { state.zoomTo(if (state.zoom > 1.2f) 1f else 2f, at) }
+                    },
+                )
             },
     ) {
         val margin = 12.dp
@@ -288,7 +297,8 @@ fun PdfPagesView(
         val baseWidthPx = minOf(viewportPx, with(density) { maxPageWidth.toPx() } + marginPx * 2)
         val contentWidthPx = baseWidthPx * state.zoom
         val pageWidthPx = contentWidthPx - marginPx * 2
-        val renderWidth = renderWidthFor(pageWidthPx)
+        // A quarter-turned page is laid out on its side: its own width is the shown height.
+        val turn = PageRotation.normalize(rotation)
         Box(Modifier.fillMaxSize().horizontalScroll(state.horizontal, enabled = state.zoom > 1f && !drawingActive)) {
             LazyColumn(
                 state = state.list,
@@ -311,7 +321,8 @@ fun PdfPagesView(
                     },
             ) {
                 items(count = loader.pageCount, key = { it }) { index ->
-                    PdfPage(index, loader, renderWidth, Modifier.width(with(density) { pageWidthPx.toDp() }), pageOverlay)
+                    val ownWidth = if (PageRotation.isQuarterTurn(turn)) pageWidthPx * loader.aspectRatio(index) else pageWidthPx
+                    PdfPage(index, loader, renderWidthFor(ownWidth), turn, Modifier.width(with(density) { pageWidthPx.toDp() }), pageOverlay)
                 }
             }
         }
@@ -323,6 +334,7 @@ private fun PdfPage(
     index: Int,
     loader: PdfPageLoader,
     renderWidth: Int,
+    rotation: Int,
     modifier: Modifier,
     overlay: @Composable BoxScope.(Int) -> Unit,
 ) {
@@ -344,24 +356,31 @@ private fun PdfPage(
     val description = stringResource(R.string.viewer_page_cd, index + 1, loader.pageCount)
     Box(
         modifier
-            .aspectRatio(loader.aspectRatio(index))
+            .aspectRatio(PageRotation.shownAspect(loader.aspectRatio(index), rotation))
             .shadow(1.dp)
             .background(Color.White)
             .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
     ) {
-        val current = bitmap
-        when {
-            current != null -> Image(current, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
-            failed -> Text(
-                stringResource(R.string.viewer_page_failed),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF5C5862),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(16.dp),
-            )
-            else -> CircularProgressIndicator(Modifier.size(28.dp), color = Color(0xFF7652F2), strokeWidth = 3.dp)
+        // The page as printed, turned as a whole: picture, ink and notes together.
+        Box(Modifier.fillMaxSize().turned(rotation), contentAlignment = Alignment.Center) {
+            PageContent(index, bitmap, failed, overlay)
         }
-        overlay(index)
     }
+}
+
+@Composable
+private fun BoxScope.PageContent(index: Int, bitmap: ImageBitmap?, failed: Boolean, overlay: @Composable BoxScope.(Int) -> Unit) {
+    val current = bitmap
+    when {
+        current != null -> Image(current, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+        failed -> Text(
+            stringResource(R.string.viewer_page_failed),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF5C5862),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(16.dp),
+        )
+        else -> CircularProgressIndicator(Modifier.size(28.dp), color = Color(0xFF7652F2), strokeWidth = 3.dp)
+    }
+    overlay(index)
 }

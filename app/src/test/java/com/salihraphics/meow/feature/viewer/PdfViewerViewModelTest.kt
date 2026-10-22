@@ -183,4 +183,26 @@ class PdfViewerViewModelTest {
         assertTrue(sessions.opened!!.closed)
         assertEquals(listOf("doc-1" to 11), repo.readings)
     }
+
+    @Test
+    fun rotationIsRememberedPerPdfAndNeverTouchesAnnotations() = scope.runTest {
+        val repo = FakePdfLibraryRepository(tmp.root).apply { add(sampleDocument()) }
+        val vm = viewModel(repo, FakeSessionFactory(pages = 4))
+        advanceUntilIdle()
+        assertEquals(0, vm.rotation.value)
+        vm.setRotation(90)
+        assertEquals(90, vm.rotation.value)
+        vm.setRotation(360) // a full turn is the original orientation
+        assertEquals(0, vm.rotation.value)
+        vm.setRotation(-90)
+        assertEquals(270, vm.rotation.value)
+        advanceUntilIdle()
+        assertEquals(270, repo.get("doc-1")!!.viewRotation)
+
+        // Reopening the PDF (a new screen) comes back turned the same way.
+        store.clear()
+        val again = viewModel(repo, FakeSessionFactory(pages = 4))
+        advanceUntilIdle()
+        assertEquals(270, again.rotation.value)
+    }
 }

@@ -101,4 +101,77 @@ class AnnotationSessionTest {
         while (history.undo() != null) undone++
         assertEquals(3, undone)
     }
+
+    @Test
+    fun highlightsAreStoredAsHighlighterStrokesAndNeverCheckedAsAnswers() {
+        val checked = mutableListOf<Stroke>()
+        val s = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined), onStrokeAdded = { checked += it }) { "s${ids++}" }
+        s.selectHighlightColor(1)
+        s.selectHighlightWidth(0)
+        s.addStroke(0, line(0.1f, 0.5f, 0.9f, 0.5f), AnnotationTool.HIGHLIGHTER)
+        s.addStroke(0, line(0.1f, 0.6f, 0.2f, 0.6f), AnnotationTool.PEN)
+        val (highlight, pen) = repo.all.values.toList()
+        assertEquals(StrokeTool.HIGHLIGHTER, highlight.tool)
+        assertEquals(AnnotationToolState.HIGHLIGHT_COLORS[1], highlight.color)
+        assertEquals(AnnotationToolState.HIGHLIGHT_WIDTHS[0], highlight.width)
+        // Translucent, so the printed text stays readable.
+        assertTrue((highlight.color ushr 24) in 0x30..0x90)
+        assertEquals(listOf(pen), checked)
+    }
+
+    @Test
+    fun notesAreAddedOnTheirPageEditedAndUndoneLikeStrokes() {
+        val s = session()
+        s.load(3)
+        val note = s.addNote(3)
+        assertEquals(3, note.pageIndex)
+        assertEquals(note.id, s.selectedNote.value)
+        assertEquals(note, s.editingNote.value)
+        s.updateNote(note.copy(text = "Sınavdan önce bak", x = 0.6f, y = 0.7f))
+        assertEquals("Sınavdan önce bak", repo.notes[note.id]!!.text)
+
+        s.deleteNote(repo.notes[note.id]!!)
+        assertTrue(s.notes(3).value!!.isEmpty())
+        assertNull(s.selectedNote.value)
+        s.undo() // the delete
+        // Back as it was last: moved and typed.
+        assertEquals(0.6f, s.notes(3).value!!.single().x, 0f)
+        assertFalse(note.id in repo.deletedNotes)
+        s.undo() // the add
+        assertTrue(s.notes(3).value!!.isEmpty())
+        assertTrue(note.id in repo.deletedNotes)
+        s.redo()
+        assertEquals("Sınavdan önce bak", s.notes(3).value!!.single().text)
+    }
+
+    @Test
+    fun notesStayInsideTheirPage() {
+        val s = session()
+        s.load(0)
+        val note = s.addNote(0)
+        s.updateNote(note.copy(x = 0.95f, y = -0.2f, width = 0.01f, height = 2f))
+        val kept = repo.notes[note.id]!!
+        assertEquals(com.salihraphics.meow.domain.model.StickyNote.MIN_SIZE, kept.width, 0f)
+        assertEquals(1f, kept.height, 0f)
+        assertTrue(kept.x + kept.width <= 1f)
+        assertEquals(0f, kept.y, 0f)
+    }
+
+    @Test
+    fun aNoteAddedBeforeItsPageHasLoadedIsKeptWhenTheLoadArrives() = kotlinx.coroutines.runBlocking {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val slow = object : com.salihraphics.meow.data.annotation.AnnotationRepository by repo {
+            override suspend fun notesOnPage(documentId: String, pageIndex: Int): List<com.salihraphics.meow.domain.model.StickyNote> {
+                gate.await()
+                return repo.notesOnPage(documentId, pageIndex)
+            }
+        }
+        repo.putNote(com.salihraphics.meow.domain.model.StickyNote("old", "doc", 0, 0.5f, 0.5f, 0.3f, 0.2f, "eski", 0))
+        val s = AnnotationSession("doc", slow, CoroutineScope(Dispatchers.Unconfined)) { "n${ids++}" }
+        s.load(0) // reading is slow…
+        val added = s.addNote(0) // …and the student adds a note meanwhile.
+        gate.complete(Unit)
+        kotlinx.coroutines.yield()
+        assertEquals(setOf(added.id, "old"), s.notes(0).value!!.map { it.id }.toSet())
+    }
 }

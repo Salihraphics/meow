@@ -21,10 +21,27 @@
 - Pages are a `LazyColumn`; only pages near the screen are rendered. Bitmaps are rendered at
   display width (rounded to 128px steps, capped at 2048px) and kept in a byte-bounded LRU cache
   (1/8 of the heap, at most 96 MB).
-- Zoom 100–400%: pinch (previewed with a layer scale, then re-rendered sharp), double-tap, and
-  +/− buttons. Above roughly 2048px of page width, pages are upscaled rather than re-rendered;
-  tiled rendering would fix that if it matters in practice.
+- Zoom 50–400%: pinch (previewed with a layer scale, then re-rendered sharp), double-tap, and
+  the panel's −/+/"Normal boyut" buttons. Above roughly 2048px of page width, pages are upscaled
+  rather than re-rendered; tiled rendering would fix that if it matters in practice.
+- Page rotation (panel: "Sola döndür", "Sağa döndür", "Orijinal yön") turns the view only, in
+  quarter turns. Each page is laid out on its side and its picture, ink and notes are turned
+  together (`Modifier.turned`, `PageRotation`); touches reach the page content already in the
+  unturned page's coordinates, so nothing stored depends on the turn. The turn is remembered per
+  PDF (`pdf_documents.viewRotation`, database v6); the PDF file is never changed.
 - The reading position is saved a moment after scrolling stops, and on leaving the screen.
+
+**Study workspace layout** (`PdfViewerScreen`, `StudyPanel`, `AnnotationTools`)
+- Nothing is drawn over the pages: no floating toolbar, chip or card. The pages are on the left.
+- Tablets and landscape (window `useTwoPanes` or expanded width): a scrolling study panel on the
+  right (340dp, 300dp on short screens): answers fixed at the top (the latest reading, the
+  answer count and "Testi kontrol et"), then Araçlar (navigate, pen, highlighter, eraser, undo,
+  redo, and the selected tool's colours and widths), Çalışma süresi (timer and cat), Notlar,
+  Görünüm (page, go to page, zoom, rotation) and Belge.
+- Phones in portrait: a 56dp tool rail docked at the right edge (panel menu, the four tools, add
+  note, undo, redo, and the selected tool's colours and widths) and the full panel as a drawer
+  from the right ("Çalışma paneli"). Answers are a strip docked under the top bar that pushes the
+  pages down; a question about a mark, or a result, is a dialog.
 
 ## Annotation
 
@@ -54,8 +71,37 @@
   eraser, one finger or a stylus draws; two fingers pan and zoom. Which pointers draw is decided
   in `DrawingInputPolicy`, the place to add stylus-only drawing and palm rejection.
 
-**Next for annotation**: highlighter, partial (pixel) erasing, pressure-sensitive width, and
-stylus-only mode.
+**Highlighter**: yellow or green, three widths (1.4–3.4% of the page width), drawn as one
+translucent path with flat ends below the pen ink, so text under it stays readable. Stored as
+strokes with tool `HIGHLIGHTER`; erasing, undo and redo work as for the pen. Highlights are never
+checked as answer marks; only pen strokes are.
+
+**Post-it notes** (`StickyNote`, table `sticky_notes`, database v6): position and size are
+fractions of the unturned page, text, colour, timestamps and a tombstone. "Not ekle" puts a note
+on the current page and opens it for typing. A note sits above the ink and takes every touch on
+it, so dragging it never draws underneath: tap selects it (move, resize and delete handles), tap
+again edits the text, drag moves it, the corner handle resizes it. Its text is turned back
+upright when the page is turned. Adding and deleting notes are undoable; moves and edits save at
+once. A page's notes load with its strokes; a note added before that finishes is kept.
+
+**Next for annotation**: partial (pixel) erasing, pressure-sensitive width, stylus-only mode.
+
+**Study timer** (`feature/study`, tables `study_timer` and `study_sessions`)
+- One timer for the app (it keeps running across PDFs), 25 minutes by default, 5–180 in steps of
+  5. Elapsed time is banked time plus the time since the last start on a monotonic clock
+  (`SystemClock.elapsedRealtime`), never a counter, so it stays right while the app is in the
+  background. The display recomputes it once a second while running.
+- Saved on every change, every 30 s while running, and when the app goes to the background. If
+  the app's process ends while it runs, it comes back paused at the time saved last: the time
+  the app was gone isn't counted and the session is never completed by itself.
+- Each session that ends is logged with the time actually studied: completed when it reached its
+  duration, otherwise not. The panel shows today's studied time and completed sessions apart.
+
+**Study cat** (`StudyCat`): next to the timer, reacting to real timer events. Starting, pausing,
+an early end (kind words with the minutes studied, never pressure) and a completed session
+(celebrated more for 25 minutes or longer) each have several lines, never the same twice in a
+row. Tapping talks; a sleeping cat wakes up. With no session running it dozes off after 3
+minutes. No idle animation loops run in the panel.
 
 **Question-level annotations** will need no data change: a question is a page plus a rectangle
 in the same page fractions, and its annotations are the page's strokes inside that rectangle.

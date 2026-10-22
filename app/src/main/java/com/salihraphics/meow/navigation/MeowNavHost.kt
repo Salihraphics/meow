@@ -165,6 +165,7 @@ fun MeowNavHost(
                 vm,
                 onBack = { navController.popBackStack() },
                 onOpenAnswerKey = { navController.navigate(MeowDestinations.answerKey(documentId)) { launchSingleTop = true } },
+                studyTimer = container.studyTimer,
             )
         }
         composable(MeowDestinations.SETTINGS) {

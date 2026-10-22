@@ -38,6 +38,13 @@ import com.salihraphics.meow.feature.viewer.ViewportSnapshot
 import com.salihraphics.meow.testing.sampleDocument
 import com.salihraphics.meow.feature.annotation.AnnotationSession
 import com.salihraphics.meow.feature.annotation.AnnotationTool
+import com.salihraphics.meow.feature.annotation.AnnotationToolState
+import com.salihraphics.meow.feature.study.FakeStudyDao
+import com.salihraphics.meow.feature.study.StudyTimerController
+import com.salihraphics.meow.feature.viewer.ViewerWorkspace
+import com.salihraphics.meow.domain.model.StickyNote
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import com.salihraphics.meow.domain.model.Stroke
 import com.salihraphics.meow.domain.model.StrokeTool
 import com.salihraphics.meow.testing.FakeAnnotationRepository
@@ -72,12 +79,15 @@ class LibraryViewerScreenshotTest {
 
     private val thumbnails: suspend (com.salihraphics.meow.domain.model.PdfDocument) -> ImageBitmap? = { syntheticPage(240) }
 
-    private fun shoot(name: String, dark: Boolean = false, wholeScreen: Boolean = false, content: @Composable () -> Unit) {
+    private fun shoot(name: String, dark: Boolean = false, wholeScreen: Boolean = false, act: () -> Unit = {}, content: @Composable () -> Unit) {
         rule.setContent {
             MeowTheme(darkTheme = dark, mascotAnimationsEnabled = false) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { content() }
             }
         }
+        rule.mainClock.advanceTimeBy(800)
+        rule.waitForIdle()
+        act()
         rule.mainClock.advanceTimeBy(800)
         rule.waitForIdle()
         // Dialogs are windows of their own; capture everything on screen for those.
@@ -88,13 +98,25 @@ class LibraryViewerScreenshotTest {
     private fun library(name: String, documents: List<com.salihraphics.meow.domain.model.PdfDocument>?, state: LibraryUiState = LibraryUiState(), dark: Boolean = false) =
         shoot(name, dark) { LibraryContent(documents, state, thumbnails, LibraryActions()) }
 
-    private fun viewer(name: String, state: ViewerUiState, dark: Boolean = false, check: AnswerCheckUi? = null, answers: ViewerAnswers = ViewerAnswers(check)) =
-        shoot(name, dark, wholeScreen = answers.sessionCheck != null) {
-            PdfViewerContent(
-                state, initialViewport = { ViewportSnapshot(0) }, onViewportChanged = {}, onPageChanged = {}, onBack = {},
-                answers = answers, answerActions = ViewerAnswerActions(onOpenAnswerKey = {}),
-            )
-        }
+    private fun viewer(
+        name: String,
+        state: ViewerUiState,
+        dark: Boolean = false,
+        check: AnswerCheckUi? = null,
+        answers: ViewerAnswers = ViewerAnswers(check),
+        workspace: ViewerWorkspace = ViewerWorkspace(),
+        act: () -> Unit = {},
+    ) = shoot(
+        name, dark,
+        // Phones ask about marks in a dialog, a window of its own.
+        wholeScreen = answers.sessionCheck != null || (answers.check != null && answers.check !is AnswerCheckUi.Recorded),
+        act = act,
+    ) {
+        PdfViewerContent(
+            state, initialViewport = { ViewportSnapshot(0) }, onViewportChanged = {}, onPageChanged = {}, onBack = {},
+            answers = answers, answerActions = ViewerAnswerActions(onOpenAnswerKey = {}), workspace = workspace,
+        )
+    }
 
     private val ready = ViewerUiState.Ready(docs[0], SyntheticLoader(312), initialPage = 0, annotations = AnnotationSession("doc-1", FakeAnnotationRepository(), CoroutineScope(Dispatchers.Unconfined)))
 
@@ -126,6 +148,39 @@ class LibraryViewerScreenshotTest {
     @Test @Config(qualifiers = PHONE) fun viewerPen() = viewer("phone_viewer_pen", annotated(AnnotationTool.PEN))
     @Test @Config(qualifiers = PHONE) fun viewerReadingDark() = viewer("phone_viewer_annotated_dark", annotated(null), dark = true)
     @Test @Config(qualifiers = TABLET_LANDSCAPE) fun viewerTabletEraser() = viewer("tablet_viewer_eraser", annotated(AnnotationTool.ERASER))
+
+    /** Highlights, pen ink and a note on page 1, for the study workspace shots. */
+    private fun studied(tool: AnnotationTool?): ViewerUiState.Ready {
+        val repo = FakeAnnotationRepository().apply {
+            add(Stroke("h1", "1", 0, StrokeTool.HIGHLIGHTER, AnnotationToolState.HIGHLIGHT_COLORS[0], 0.022f, floatArrayOf(0.1f, 0.185f, 0.55f, 0.185f)))
+            add(Stroke("h2", "1", 0, StrokeTool.HIGHLIGHTER, AnnotationToolState.HIGHLIGHT_COLORS[1], 0.022f, floatArrayOf(0.1f, 0.24f, 0.7f, 0.24f)))
+            add(Stroke("a", "1", 0, StrokeTool.PEN, 0xFFE0383E.toInt(), 0.006f, floatArrayOf(0.15f, 0.42f, 0.3f, 0.4f, 0.45f, 0.43f, 0.6f, 0.41f)))
+            putNote(StickyNote("n1", "1", 0, 0.55f, 0.55f, 0.32f, 0.16f, "Türev kurallarını tekrar et!", StickyNote.YELLOW))
+        }
+        val session = AnnotationSession("1", repo, CoroutineScope(Dispatchers.Unconfined)).apply {
+            selectTool(tool)
+            selectNote("n1")
+        }
+        return ready.copy(annotations = session)
+    }
+
+    private fun timer(): StudyTimerController {
+        val dao = FakeStudyDao()
+        return StudyTimerController(dao, CoroutineScope(Dispatchers.Unconfined), { 0L }, { 0L }).apply { setDurationMinutes(25) }
+    }
+
+    @Test @Config(qualifiers = TABLET_LANDSCAPE) fun workspaceTablet() =
+        viewer("tablet_workspace", studied(AnnotationTool.HIGHLIGHTER), workspace = ViewerWorkspace(timer = timer()))
+    @Test @Config(qualifiers = TABLET_LANDSCAPE) fun workspaceTabletDarkRotated() =
+        viewer("tablet_workspace_rotated_dark", studied(AnnotationTool.PEN), dark = true, workspace = ViewerWorkspace(rotation = 90, timer = timer()))
+    @Test @Config(qualifiers = PHONE) fun workspacePhoneRail() = viewer("phone_workspace_rail", studied(AnnotationTool.HIGHLIGHTER))
+    @Test @Config(qualifiers = PHONE) fun workspacePhoneDrawer() = viewer(
+        "phone_workspace_drawer", studied(null), workspace = ViewerWorkspace(timer = timer()),
+        act = { rule.onNodeWithContentDescription("Çalışma paneli").performClick() },
+    )
+    @Test @Config(qualifiers = PHONE) fun workspacePhoneHalfZoom() = shoot("phone_workspace_zoom_50") {
+        PdfViewerContent(studied(null), initialViewport = { ViewportSnapshot(0, zoom = 0.5f) }, onViewportChanged = {}, onPageChanged = {}, onBack = {})
+    }
 
     private fun graded(result: AttemptResult, selected: String) =
         AnswerCheckUi.Result(CheckOutcome.Graded(4, selected, "C", result, "t1"))

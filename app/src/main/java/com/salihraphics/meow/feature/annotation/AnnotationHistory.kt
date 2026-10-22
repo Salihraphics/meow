@@ -1,8 +1,9 @@
 package com.salihraphics.meow.feature.annotation
 
+import com.salihraphics.meow.domain.model.StickyNote
 import com.salihraphics.meow.domain.model.Stroke
 
-/** One undoable step. Both kinds only toggle stroke visibility, so undo/redo are exact. */
+/** One undoable step. Every kind only toggles visibility, so undo/redo are exact. */
 sealed interface AnnotationEdit {
     val pageIndex: Int
 
@@ -12,6 +13,14 @@ sealed interface AnnotationEdit {
 
     /** One eraser gesture, which may remove several strokes on one page. */
     data class Erased(override val pageIndex: Int, val strokes: List<Stroke>) : AnnotationEdit
+
+    data class NoteAdded(val note: StickyNote) : AnnotationEdit {
+        override val pageIndex get() = note.pageIndex
+    }
+
+    data class NoteRemoved(val note: StickyNote) : AnnotationEdit {
+        override val pageIndex get() = note.pageIndex
+    }
 }
 
 /**

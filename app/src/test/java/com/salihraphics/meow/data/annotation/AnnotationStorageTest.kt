@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.platform.app.InstrumentationRegistry
 import com.salihraphics.meow.data.library.db.MeowDatabase
+import com.salihraphics.meow.domain.model.StickyNote
 import com.salihraphics.meow.domain.model.Stroke
 import com.salihraphics.meow.domain.model.StrokeTool
 import kotlinx.coroutines.CoroutineScope
@@ -125,5 +126,87 @@ class AnnotationStorageTest {
             assertTrue(it.moveToFirst())
             assertEquals(0, it.getInt(0))
         }
+    }
+
+    private fun note(id: String, page: Int = 0, text: String = "Formülü tekrar et") =
+        StickyNote(id, "doc", page, 0.2f, 0.3f, 0.3f, 0.16f, text, StickyNote.YELLOW)
+
+    @Test
+    fun notesKeepTheirPagePositionSizeAndTextAcrossReopening() = runBlocking {
+        val file = tmp.root.resolve("notes.db")
+        val first = openDb(file)
+        val writer = LocalAnnotationRepository(first.strokes(), scope) { clock }
+        writer.putNote(note("n1"))
+        writer.putNote(note("n2", page = 3))
+        // Dragged, resized and edited later: the same row is updated, not duplicated.
+        clock = 2_000L
+        writer.putNote(note("n1").copy(x = 0.55f, y = 0.7f, width = 0.4f, height = 0.25f, text = "Türev kuralları"))
+        writer.flush()
+        first.close()
+
+        val second = openDb(file)
+        val reader = LocalAnnotationRepository(second.strokes(), scope) { clock }
+        assertEquals(
+            listOf(note("n1").copy(x = 0.55f, y = 0.7f, width = 0.4f, height = 0.25f, text = "Türev kuralları")),
+            reader.notesOnPage("doc", 0),
+        )
+        assertEquals(listOf("n2"), reader.notesOnPage("doc", 3).map { it.id })
+        second.close()
+    }
+
+    @Test
+    fun deletingANoteIsATombstoneThatUndoCanLift() = runBlocking {
+        val db = openDb(tmp.root.resolve("notes2.db"))
+        val repo = LocalAnnotationRepository(db.strokes(), scope) { clock }
+        repo.putNote(note("n"))
+        repo.deleteNote("n")
+        assertTrue(repo.notesOnPage("doc", 0).isEmpty())
+        repo.restoreNote("n")
+        assertEquals(listOf("n"), repo.notesOnPage("doc", 0).map { it.id })
+        db.close()
+    }
+
+    @Test
+    fun highlighterStrokesAreStoredWithTheirTool() = runBlocking {
+        val db = openDb(tmp.root.resolve("hl.db"))
+        val repo = LocalAnnotationRepository(db.strokes(), scope) { clock }
+        repo.add(stroke("h").copy(tool = StrokeTool.HIGHLIGHTER, color = 0x66FFE14D, width = 0.025f))
+        assertEquals(StrokeTool.HIGHLIGHTER, repo.strokesOnPage("doc", 0).single().tool)
+        db.close()
+    }
+
+    @Test
+    fun upgradingFromVersion5KeepsLibraryDrawingsAndAnswers() {
+        val name = "upgrade5.db"
+        migrations.createDatabase(name, 5).apply {
+            execSQL(
+                "INSERT INTO pdf_documents (id, displayName, originalFileName, sizeBytes, pageCount, contentSha256, importedAt, " +
+                    "lastOpenedAt, lastPageIndex, updatedAt, deletedAt) VALUES ('doc', 'TYT Matematik', 'tyt.pdf', 10, 240, 'h', 1, 2, 57, 2, NULL)",
+            )
+            execSQL(
+                "INSERT INTO annotation_strokes (id, documentId, pageIndex, tool, color, width, points, createdAt, updatedAt, deletedAt) " +
+                    "VALUES ('s1', 'doc', 57, 'PEN', -16777216, 0.005, x'0000803E0000003F', 1, 1, NULL)",
+            )
+            execSQL(
+                "INSERT INTO answer_attempts (id, documentId, testId, questionNumber, pageIndex, selected, selectionOrigin, result, strokeId, " +
+                    "createdAt, updatedAt, deletedAt) VALUES ('a1', 'doc', NULL, 4, 57, 'C', 'RECOGNIZED', 'PENDING', 's1', 1, 1, NULL)",
+            )
+            close()
+        }
+        val db = migrations.runMigrationsAndValidate(name, 6, true)
+        db.query("SELECT lastPageIndex, viewRotation FROM pdf_documents WHERE id = 'doc'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(57, it.getInt(0))
+            assertEquals(0, it.getInt(1))
+        }
+        db.query("SELECT points FROM annotation_strokes WHERE id = 's1'").use {
+            assertTrue(it.moveToFirst())
+            assertArrayEquals(floatArrayOf(0.25f, 0.5f), StrokeEntity.decodePoints(it.getBlob(0)), 0f)
+        }
+        db.query("SELECT selected FROM answer_attempts WHERE id = 'a1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("C", it.getString(0))
+        }
+        db.query("SELECT COUNT(*) FROM sticky_notes").use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
     }
 }

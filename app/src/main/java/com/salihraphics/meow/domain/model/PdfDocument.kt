@@ -12,6 +12,8 @@ data class PdfDocument(
     val lastOpenedAt: Long?,
     /** Zero-based page the student was last reading. */
     val lastPageIndex: Int,
+    /** How the student turned the pages in the viewer, degrees clockwise. */
+    val viewRotation: Int = 0,
 ) {
     companion object {
         const val MAX_NAME_LENGTH = 120

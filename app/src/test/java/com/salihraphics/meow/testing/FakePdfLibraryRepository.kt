@@ -60,6 +60,10 @@ class FakePdfLibraryRepository(private val dir: File) : PdfLibraryRepository {
         readings += id to pageIndex
     }
 
+    override suspend fun setViewRotation(id: String, degrees: Int) {
+        current.update { list -> list.map { if (it.id == id) it.copy(viewRotation = Math.floorMod(degrees, 360)) else it } }
+    }
+
     override fun pdfFile(id: String) = File(dir, "$id.pdf")
 
     override fun thumbnailFile(id: String) = File(dir, "$id.jpg")

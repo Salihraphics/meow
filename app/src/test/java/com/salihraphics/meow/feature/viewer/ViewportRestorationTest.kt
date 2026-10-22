@@ -17,6 +17,7 @@ import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
@@ -119,8 +120,20 @@ class ViewportRestorationTest {
         // Part-way into page 17, then zoom in twice with the button, then pan sideways.
         pages.performTouchInput { swipe(Offset(centerX, centerY + 150f), Offset(centerX, centerY - 150f), 400) }
         rule.waitForIdle()
+        // On a phone the zoom buttons are in the study panel drawer, beside the pages.
+        val inDrawer = rule.onAllNodes(hasContentDescription("Yakınlaştır")).fetchSemanticsNodes().isEmpty()
+        if (inDrawer) {
+            rule.onNode(hasContentDescription("Çalışma paneli")).performClick()
+            rule.mainClock.advanceTimeBy(600)
+            rule.waitForIdle()
+        }
         repeat(2) {
-            rule.onNode(hasContentDescription("Yakınlaştır")).performClick()
+            rule.onNode(hasContentDescription("Yakınlaştır")).apply { runCatching { performScrollTo() } }.performClick()
+            rule.waitForIdle()
+        }
+        if (inDrawer) {
+            rule.onNode(hasContentDescription("Paneli kapat")).performClick()
+            rule.mainClock.advanceTimeBy(600)
             rule.waitForIdle()
         }
         pages.performTouchInput { swipe(Offset(centerX + 120f, centerY), Offset(centerX - 120f, centerY), 400) }

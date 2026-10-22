@@ -109,12 +109,17 @@ class LocalPdfLibraryRepository(
         val time = now()
         dao.markDeleted(id, time)
         strokes?.markDocumentDeleted(id, time)
+        strokes?.markDocumentNotesDeleted(id, time)
         onRemoved(id)
         withContext(io) { files.delete(id) }
     }
 
     override suspend fun recordReading(id: String, pageIndex: Int) {
         dao.updateReading(id, pageIndex.coerceAtLeast(0), now())
+    }
+
+    override suspend fun setViewRotation(id: String, degrees: Int) {
+        dao.updateViewRotation(id, Math.floorMod(degrees, 360), now())
     }
 
     override fun pdfFile(id: String): File = files.pdfFile(id)

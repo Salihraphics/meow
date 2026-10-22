@@ -28,6 +28,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.salihraphics.meow.domain.model.Stroke
+import com.salihraphics.meow.domain.model.StrokeTool
 
 /**
  * Decides which pointers draw. One place, so stylus-only drawing or palm rejection can be added
@@ -62,7 +63,8 @@ fun PageAnnotationLayer(
     var eraserAt by remember { mutableStateOf<Offset?>(null) }
     val eraserRadius = with(LocalDensity.current) { 14.dp.toPx() }
     val tool = tools.tool
-    val style = tools.penStyle
+    // The pen's style is kept for the eraser so the gesture code below has one shape.
+    val style = tools.styleFor(tool) ?: tools.penStyle
 
     val input = if (tool != null && strokes != null) {
         Modifier.pointerInput(tool, style) {
@@ -76,7 +78,7 @@ fun PageAnnotationLayer(
 
                 fun touch(position: Offset) {
                     when (tool) {
-                        AnnotationTool.PEN -> {
+                        AnnotationTool.PEN, AnnotationTool.HIGHLIGHTER -> {
                             val (x, y) = StrokeGeometry.toFraction(position.x, position.y, w, h)
                             if (StrokeGeometry.shouldAppend(inProgress, x, y, aspect)) {
                                 inProgress.add(x)
@@ -111,7 +113,8 @@ fun PageAnnotationLayer(
                 }
 
                 when (tool) {
-                    AnnotationTool.PEN -> if (!cancelled && inProgress.isNotEmpty()) session.addStroke(pageIndex, inProgress.toFloatArray())
+                    AnnotationTool.PEN, AnnotationTool.HIGHLIGHTER ->
+                        if (!cancelled && inProgress.isNotEmpty()) session.addStroke(pageIndex, inProgress.toFloatArray(), tool)
                     AnnotationTool.ERASER -> if (erasing.isNotEmpty()) session.erase(pageIndex, erasing)
                 }
                 inProgress.clear()
@@ -130,8 +133,11 @@ fun PageAnnotationLayer(
             .graphicsLayer()
             .then(input),
     ) {
-        strokes?.forEach { if (it.id !in erasing) drawStroke(it.points, Color(it.color), it.width) }
-        if (inProgress.isNotEmpty()) drawStroke(inProgress.toFloatArray(), Color(style.color), style.width)
+        // Highlights first, so pen ink drawn over them stays crisp.
+        strokes?.sortedBy { if (it.tool == StrokeTool.HIGHLIGHTER) 0 else 1 }?.forEach {
+            if (it.id !in erasing) drawStroke(it.points, Color(it.color), it.width, highlight = it.tool == StrokeTool.HIGHLIGHTER)
+        }
+        if (inProgress.isNotEmpty()) drawStroke(inProgress.toFloatArray(), Color(style.color), style.width, highlight = tool == AnnotationTool.HIGHLIGHTER)
         eraserAt?.let {
             drawCircle(Color(0x33000000), eraserRadius, it)
             drawCircle(Color(0x99000000), eraserRadius, it, style = DrawStroke(1.dp.toPx()))
@@ -139,8 +145,12 @@ fun PageAnnotationLayer(
     }
 }
 
-/** Draws page-fraction [points] scaled to this canvas, smoothed through segment midpoints. */
-private fun DrawScope.drawStroke(points: FloatArray, color: Color, widthFraction: Float) {
+/**
+ * Draws page-fraction [points] scaled to this canvas, smoothed through segment midpoints. A
+ * [highlight] is one translucent path with flat ends, so where it crosses itself it doesn't
+ * get darker and the text under it stays readable.
+ */
+private fun DrawScope.drawStroke(points: FloatArray, color: Color, widthFraction: Float, highlight: Boolean = false) {
     val w = size.width
     val h = size.height
     val strokeWidth = (widthFraction * w).coerceAtLeast(1f)
@@ -159,5 +169,5 @@ private fun DrawScope.drawStroke(points: FloatArray, color: Color, widthFraction
         }
         lineTo(points[points.size - 2] * w, points[points.size - 1] * h)
     }
-    drawPath(path, color, style = DrawStroke(strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    drawPath(path, color, style = DrawStroke(strokeWidth, cap = if (highlight) StrokeCap.Butt else StrokeCap.Round, join = StrokeJoin.Round))
 }

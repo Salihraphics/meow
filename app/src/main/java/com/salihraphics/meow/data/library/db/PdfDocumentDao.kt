@@ -30,6 +30,9 @@ interface PdfDocumentDao {
     )
     suspend fun updateReading(id: String, pageIndex: Int, now: Long): Int
 
+    @Query("UPDATE pdf_documents SET viewRotation = :degrees, updatedAt = :now WHERE id = :id AND deletedAt IS NULL")
+    suspend fun updateViewRotation(id: String, degrees: Int, now: Long): Int
+
     @Query("UPDATE pdf_documents SET deletedAt = :now, updatedAt = :now WHERE id = :id AND deletedAt IS NULL")
     suspend fun markDeleted(id: String, now: Long): Int
 }

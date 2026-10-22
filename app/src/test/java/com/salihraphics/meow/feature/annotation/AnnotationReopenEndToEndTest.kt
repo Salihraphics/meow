@@ -15,7 +15,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
@@ -139,6 +143,67 @@ class AnnotationReopenEndToEndTest {
         assertTrue(isWhite(pixelAt(0.5f, 0.5f)))
         val saved = runBlocking { annotations.strokesOnPage("doc-1", 0) }
         assertEquals(1, saved.size)
+        db.close()
+    }
+
+    @Test
+    fun highlightsNotesAndTheTurnSurviveReopening() {
+        val library = FakePdfLibraryRepository(tmp.newFolder("lib")).apply { add(sampleDocument(pages = 6)) }
+        val dbFile = tmp.root.resolve("meow2.db")
+        var db = openDb(dbFile)
+        var annotations = LocalAnnotationRepository(db.strokes(), appScope)
+        var store = ViewModelStore()
+        var vm by mutableStateOf(viewModel(store, library, annotations))
+        rule.setContent {
+            key(vm) {
+                MeowTheme(darkTheme = false, mascotAnimationsEnabled = false) {
+                    CompositionLocalProvider(LocalMeowWindow provides MeowWindow.fromDp(393, 852)) {
+                        Box(Modifier.requiredSize(393.dp, 852.dp)) {
+                            Surface(color = MaterialTheme.colorScheme.background) { PdfViewerRoute(vm, onBack = {}) }
+                        }
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        fun tap(label: String) {
+            rule.onNode(hasContentDescription(label)).apply { runCatching { performScrollTo() } }.performClick()
+            rule.waitForIdle()
+        }
+
+        tap("Fosforlu kalem")
+        rule.onNode(hasContentDescription("Sayfa 1 / 6")).performTouchInput {
+            swipe(Offset(width * 0.2f, height * 0.3f), Offset(width * 0.8f, height * 0.3f), 400)
+        }
+        rule.waitForIdle()
+        tap("Not ekle")
+        rule.onNode(hasSetTextAction()).performTextInput("Limit tekrarı")
+        rule.onNode(hasText("Kaydet")).performClick()
+        rule.waitForIdle()
+        tap("Çalışma paneli")
+        rule.mainClock.advanceTimeBy(600)
+        tap("Sağa döndür")
+        tap("Paneli kapat")
+        rule.mainClock.advanceTimeBy(600)
+        rule.waitForIdle()
+        val noteBefore = rule.onNode(hasContentDescription("Not: Limit tekrarı")).fetchSemanticsNode().boundsInRoot
+
+        store.clear()
+        runBlocking { annotations.flush() }
+        db.close()
+
+        db = openDb(dbFile)
+        annotations = LocalAnnotationRepository(db.strokes(), appScope)
+        store = ViewModelStore()
+        vm = viewModel(store, library, annotations)
+        rule.waitUntil(5_000) { rule.onAllNodes(hasContentDescription("Not: Limit tekrarı")).fetchSemanticsNodes().isNotEmpty() }
+
+        // Same turn, same note in the same place on screen, same highlight.
+        assertEquals(90, vm.rotation.value)
+        assertEquals(noteBefore, rule.onNode(hasContentDescription("Not: Limit tekrarı")).fetchSemanticsNode().boundsInRoot)
+        val strokes = runBlocking { annotations.strokesOnPage("doc-1", 0) }
+        assertEquals(listOf(com.salihraphics.meow.domain.model.StrokeTool.HIGHLIGHTER), strokes.map { it.tool })
+        assertEquals(listOf("Limit tekrarı"), runBlocking { annotations.notesOnPage("doc-1", 0) }.map { it.text })
         db.close()
     }
 

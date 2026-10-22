@@ -25,6 +25,9 @@ interface PdfLibraryRepository {
 
     suspend fun recordReading(id: String, pageIndex: Int)
 
+    /** How the student turned the pages in the viewer: 0, 90, 180 or 270 degrees clockwise. */
+    suspend fun setViewRotation(id: String, degrees: Int)
+
     fun pdfFile(id: String): File
 
     fun thumbnailFile(id: String): File

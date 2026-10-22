@@ -39,6 +39,46 @@ object MeowIcons {
         )
     }
 
+    /** Material "border_color": a marker over a bar, read as the highlighter. */
+    val Highlighter: ImageVector by lazy {
+        icon(
+            "Highlighter",
+            "M22,24H2v-4h20V24zM13.06,5.19l3.75,3.75L7.75,18H4v-3.75L13.06,5.19zM17.88,7.87l-3.75,-3.75l1.83,-1.83" +
+                "c0.39,-0.39 1.02,-0.39 1.41,0l2.34,2.34c0.39,0.39 0.39,1.02 0,1.41L17.88,7.87z",
+        )
+    }
+
+    /** Material "sticky_note_2". */
+    val StickyNote: ImageVector by lazy {
+        icon(
+            "StickyNote",
+            "M19,3H4.99C3.89,3 3,3.9 3,5l0.01,14c0,1.1 0.89,2 1.99,2h10l6,-6V5C21,3.9 20.1,3 19,3zM7,8h10v2H7V8z" +
+                "M12,14H7v-2h5V14zM14,19.5V14h5.5L14,19.5z",
+        )
+    }
+
+    val RotateLeft: ImageVector by lazy {
+        icon(
+            "RotateLeft",
+            "M7.11,8.53L5.7,7.11C4.8,8.27 4.24,9.61 4.07,11h2.02c0.14,-0.87 0.49,-1.72 1.02,-2.47zM6.09,13L4.07,13" +
+                "c0.17,1.39 0.72,2.73 1.62,3.89l1.41,-1.42c-0.52,-0.75 -0.87,-1.59 -1.01,-2.47zM7.1,18.32c1.16,0.9 2.51,1.44 3.9,1.61" +
+                "L11,17.9c-0.87,-0.15 -1.71,-0.49 -2.46,-1.03L7.1,18.32zM13,4.07L13,1L8.45,5.55 13,10L13,6.09c2.84,0.48 5,2.94 5,5.91" +
+                "s-2.16,5.43 -5,5.91v2.02c3.95,-0.49 7,-3.85 7,-7.93s-3.05,-7.44 -7,-7.93z",
+        )
+    }
+
+    val RotateRight: ImageVector by lazy {
+        icon(
+            "RotateRight",
+            "M15.55,5.55L11,1v3.07C7.06,4.56 4,7.92 4,12s3.05,7.44 7,7.93v-2.02c-2.84,-0.48 -5,-2.94 -5,-5.91" +
+                "s2.16,-5.43 5,-5.91L11,10l4.55,-4.45zM19.93,11c-0.17,-1.39 -0.72,-2.73 -1.62,-3.89l-1.42,1.42c0.54,0.75 0.88,1.6 1.02,2.47h2.02z" +
+                "M13,17.9v2.02c1.39,-0.17 2.74,-0.71 3.9,-1.61l-1.44,-1.44c-0.75,0.54 -1.59,0.89 -2.46,1.03zM16.89,15.48l1.42,1.41" +
+                "c0.9,-1.16 1.45,-2.5 1.62,-3.89h-2.02c-0.14,0.87 -0.48,1.72 -1.02,2.48z",
+        )
+    }
+
+    val Pause: ImageVector by lazy { icon("Pause", "M6,19h4V5H6v14zM14,5v14h4V5h-4z") }
+
     private fun icon(name: String, pathData: String) =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
             .addPath(addPathNodes(pathData), fill = SolidColor(Color.Black))
