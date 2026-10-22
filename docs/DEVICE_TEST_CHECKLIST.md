@@ -111,11 +111,30 @@ keys must still be there after updating.
       step. Sliding the finger off the button while holding also stops it. TalkBack: "Süreyi 5
       dakika uzat/kısalt" are buttons and a double tap changes 5 minutes.
 
-## 6. Your data after updating
+## 6. Look and feel (light and dark, phone and tablet)
+- [ ] Settings → Tema: switch Sistem / Açık / Koyu; every screen follows at once (home, library,
+      PDF workspace, answer key, dialogs).
+- [ ] Dark: secondary text, card edges, switch and field borders are easy to see; dialogs stand
+      apart from the screen behind them; nothing is pure white glare.
+- [ ] Light: cream background, off-white cards with a thin edge, no washed-out grey text.
+- [ ] Workspace panel: the selected tool is a filled tile in both themes; under pen or
+      highlighter, "Renk" and "Kalınlık" are labelled; a black pen's thickness dots are visible
+      in dark mode. Cards scroll smoothly; nothing is clipped on a short landscape tablet.
+- [ ] The cat looks like the app icon's cat at every size (home, panel, empty library, review).
+      Tap it: it reacts; leave it a few minutes: it falls asleep; tap: it wakes with half-open
+      eyes. The speech bubble appears above it without pushing the timer.
+- [ ] Timer: digits don't jitter while counting; the main button changes immediately on start,
+      pause and reset.
+- [ ] Notes: on a small note, the handles sit on the corners without hiding the writing; the
+      selected note is clearly outlined.
+- [ ] Larger text (Android font size at maximum): labels wrap instead of being cut off in the
+      panel, dialogs and home.
+
+## 7. Your data after updating
 - [ ] Update over the previous version (`adb install -r`, do not uninstall): the library, last
       pages, drawings, marked answers, confirmed keys and corrections are all still there.
 
-## 7. Nothing else broke
+## 8. Nothing else broke
 - [ ] Reading, scrolling, zooming, go-to-page, and last-read page work as before.
 - [ ] Pen, eraser, colours, undo/redo work on pages with and without questions.
 - [ ] Tablet (or phone in landscape): the side panel, the answer section and dialogs fit.

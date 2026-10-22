@@ -2,6 +2,6 @@
 <resources>
     <!-- Sampled from the MEOW logo background so icon, splash and welcome screen match. -->
     <color name="meow_brand_purple">#FF8F6EFC</color>
-    <color name="meow_cream">#FFF7F3EC</color>
-    <color name="meow_charcoal">#FF141317</color>
+    <color name="meow_cream">#FFF5F1EA</color>
+    <color name="meow_charcoal">#FF131217</color>
 </resources>

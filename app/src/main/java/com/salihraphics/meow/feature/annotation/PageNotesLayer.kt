@@ -133,7 +133,7 @@ private fun NoteView(
         Box(
             Modifier
                 .fillMaxSize()
-                .shadow(3.dp, RoundedCornerShape(2.dp))
+                .shadow(if (isSelected) 6.dp else 2.dp, RoundedCornerShape(2.dp))
                 .background(Color(note.color), RoundedCornerShape(2.dp))
                 .border(if (isSelected) 2.dp else 0.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(2.dp))
                 .then(
@@ -185,8 +185,8 @@ private fun NoteView(
             Box(
                 Modifier
                     .align(Alignment.TopStart)
-                    .offset((-12).dp, (-12).dp)
-                    .size(36.dp)
+                    .offset(-HandleOffset, -HandleOffset)
+                    .size(HandleTouch)
                     .pointerInput(note.id) {
                         detectDragGestures(onDragEnd = { commit() }, onDragCancel = { commit() }) { change, amount ->
                             change.consume()
@@ -196,44 +196,44 @@ private fun NoteView(
                     .semantics { contentDescription = moveLabel },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(26.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(MeowIcons.Move, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
+                HandleDot(MaterialTheme.colorScheme.primary) {
+                    Icon(MeowIcons.Move, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(13.dp))
                 }
             }
             val writeLabel = stringResource(R.string.note_write_text)
             Box(
                 Modifier
                     .align(Alignment.BottomStart)
-                    .offset((-12).dp, 12.dp)
-                    .size(36.dp)
+                    .offset(-HandleOffset, HandleOffset)
+                    .size(HandleTouch)
                     .pointerInput(note.id) { detectTapGestures(onTap = { session.editNote(latest) }) }
                     .semantics { contentDescription = writeLabel; role = Role.Button; onClick { session.editNote(latest); true } },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(26.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
-                    Text("Aa", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                HandleDot(MaterialTheme.colorScheme.primary) {
+                    Text("Aa", color = MaterialTheme.colorScheme.onPrimary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 }
             }
             val deleteLabel = stringResource(R.string.note_delete)
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
-                    .offset(12.dp, (-12).dp)
-                    .size(32.dp)
+                    .offset(HandleOffset, -HandleOffset)
+                    .size(HandleTouch)
                     .pointerInput(note.id) { detectTapGestures(onTap = { session.deleteNote(latest) }) }
                     .semantics { contentDescription = deleteLabel; role = Role.Button; onClick { session.deleteNote(latest); true } },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(24.dp).background(MaterialTheme.colorScheme.error, CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(16.dp))
+                HandleDot(MaterialTheme.colorScheme.error) {
+                    Icon(Icons.Filled.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(13.dp))
                 }
             }
             val resizeLabel = stringResource(R.string.note_resize)
             Box(
                 Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(12.dp, 12.dp)
-                    .size(36.dp)
+                    .offset(HandleOffset, HandleOffset)
+                    .size(HandleTouch)
                     .pointerInput(note.id) {
                         detectDragGestures(onDragEnd = { commit() }, onDragCancel = { commit() }) { change, amount ->
                             change.consume()
@@ -243,8 +243,24 @@ private fun NoteView(
                     .semantics { contentDescription = resizeLabel },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(18.dp).background(MaterialTheme.colorScheme.primary, CircleShape).border(2.dp, Color.White, CircleShape))
+                HandleDot(MaterialTheme.colorScheme.primary) {}
             }
         }
     }
+}
+
+/** Handles: a 40dp touch area centred on a corner, showing a 20dp dot with a white edge. */
+private val HandleTouch = 40.dp
+private val HandleOffset = 20.dp
+
+@Composable
+private fun HandleDot(color: Color, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(20.dp)
+            .shadow(2.dp, CircleShape)
+            .background(color, CircleShape)
+            .border(1.5.dp, Color.White, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }

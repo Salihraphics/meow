@@ -1,5 +1,7 @@
 package com.salihraphics.meow.core.designsystem.component
 
+import com.salihraphics.meow.core.designsystem.theme.cardBorder
+import com.salihraphics.meow.core.designsystem.theme.cardColor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,12 +42,13 @@ fun FeatureRow(
     val scheme = MaterialTheme.colorScheme
     val content: @Composable () -> Unit = { FeatureRowContent(icon, title, description, comingSoon, onClick != null) }
     if (onClick != null) {
-        Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = scheme.surfaceContainer, content = content)
+        Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = cardColor, border = cardBorder, content = content)
     } else {
         Surface(
             modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
             shape = MaterialTheme.shapes.medium,
-            color = scheme.surfaceContainer,
+            color = cardColor,
+            border = cardBorder,
             content = content,
         )
     }

@@ -165,6 +165,8 @@
     <string name="annotation_width_thin">İnce çizgi</string>
     <string name="annotation_width_medium">Orta çizgi</string>
     <string name="annotation_width_thick">Kalın çizgi</string>
+    <string name="annotation_option_color">Renk</string>
+    <string name="annotation_option_width">Kalınlık</string>
     <string name="annotation_tool_highlighter">Fosforlu kalem</string>
     <string name="annotation_highlight_yellow">Sarı fosforlu</string>
     <string name="annotation_highlight_green">Yeşil fosforlu</string>

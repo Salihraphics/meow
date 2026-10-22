@@ -181,6 +181,12 @@ class LibraryViewerScreenshotTest {
         "phone_workspace_drawer", studied(null), workspace = ViewerWorkspace(timer = timer()),
         act = { rule.onNodeWithContentDescription("Çalışma paneli").performClick() },
     )
+    @Test @Config(qualifiers = TABLET_LANDSCAPE, fontScale = 1.6f) fun workspaceTabletLargeText() =
+        viewer("tablet_workspace_large_text", studied(AnnotationTool.PEN), workspace = ViewerWorkspace(timer = timer()))
+    @Test @Config(qualifiers = PHONE, fontScale = 1.6f) fun workspacePhoneDrawerLargeTextDark() = viewer(
+        "phone_workspace_drawer_large_text_dark", studied(null), dark = true, workspace = ViewerWorkspace(timer = timer()),
+        act = { rule.onNodeWithContentDescription("Çalışma paneli").performClick() },
+    )
     @Test @Config(qualifiers = PHONE) fun workspacePhoneHalfZoom() = shoot("phone_workspace_zoom_50") {
         PdfViewerContent(studied(null), initialViewport = { ViewportSnapshot(0, zoom = 0.5f) }, onViewportChanged = {}, onPageChanged = {}, onBack = {})
     }

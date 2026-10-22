@@ -20,6 +20,7 @@ class StudyCatTest {
         assertEquals(MascotMood.Sleeping, asleep.mood)
         val awake = cat.tapped(asleep, TimerStatus.IDLE)
         assertFalse(awake.sleeping)
+        assertEquals(MascotMood.Waking, awake.mood)
         assertTrue(awake.line!!.text in StudyCat.WAKE)
     }
 

@@ -1,5 +1,6 @@
 package com.salihraphics.meow.screenshots
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -100,11 +101,24 @@ class ScreenshotTest {
 
     @OptIn(ExperimentalLayoutApi::class)
     private fun moods(dark: Boolean) = shoot("mascot_moods", dark) {
-        FlowRow(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MascotMood.entries.forEach { mood ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    MeowCat(mood, Modifier.size(118.dp))
-                    Text(mood.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onBackground)
+        Column(Modifier.padding(12.dp)) {
+            // The logo next to the drawn cat at the sizes the app uses.
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                androidx.compose.foundation.Image(
+                    androidx.compose.ui.res.painterResource(com.salihraphics.meow.R.drawable.meow_peek),
+                    contentDescription = null,
+                    modifier = Modifier.size(118.dp),
+                )
+                MeowCat(MascotMood.Idle, Modifier.size(118.dp))
+                MeowCat(MascotMood.Idle, Modifier.size(64.dp))
+                MeowCat(MascotMood.Idle, Modifier.size(40.dp))
+            }
+            FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MascotMood.entries.forEach { mood ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        MeowCat(mood, Modifier.size(104.dp))
+                        Text(mood.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onBackground)
+                    }
                 }
             }
         }

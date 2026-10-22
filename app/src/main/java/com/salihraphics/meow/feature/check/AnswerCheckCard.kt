@@ -1,5 +1,7 @@
 package com.salihraphics.meow.feature.check
 
+import com.salihraphics.meow.core.designsystem.theme.cardBorder
+import com.salihraphics.meow.core.designsystem.theme.raisedColor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -85,7 +87,8 @@ fun AnswerCheckCard(
     Surface(
         modifier = modifier.widthIn(max = 460.dp).padding(horizontal = 12.dp),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = raisedColor,
+        border = cardBorder,
         shadowElevation = 6.dp,
     ) {
         Column(Modifier.padding(14.dp)) {

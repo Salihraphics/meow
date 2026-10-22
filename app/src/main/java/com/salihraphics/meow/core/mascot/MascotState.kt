@@ -12,6 +12,8 @@ enum class MascotMood {
     Celebrating,
     Sleepy,
     Sleeping,
+    /** Just woken: eyes half open, a small yawn. */
+    Waking,
     Surprised,
     Grumpy,
     /** Soft, supportive look used after mistakes. Never disappointed, never shaming. */

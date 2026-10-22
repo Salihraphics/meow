@@ -1,5 +1,7 @@
 package com.salihraphics.meow.feature.home
 
+import com.salihraphics.meow.core.designsystem.theme.cardBorder
+import com.salihraphics.meow.core.designsystem.theme.cardColor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,7 +63,8 @@ fun HomeScreen(
     val companionAndProfile = @Composable {
         Surface(
             shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainer,
+            color = cardColor,
+            border = cardBorder,
             modifier = Modifier.fillMaxWidth(),
         ) {
             CompanionCat(
@@ -137,7 +140,7 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun ProfileSummary(profile: StudyProfile, onEdit: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Surface(shape = MaterialTheme.shapes.medium, color = scheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.medium, color = cardColor, border = cardBorder, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 6.dp)) {
             val tags = buildList {
                 profile.exam?.let { add(stringResource(it.labelRes)) }

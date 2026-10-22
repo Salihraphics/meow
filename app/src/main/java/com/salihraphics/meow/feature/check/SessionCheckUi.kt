@@ -1,5 +1,7 @@
 package com.salihraphics.meow.feature.check
 
+import com.salihraphics.meow.core.designsystem.theme.insetColor
+import com.salihraphics.meow.core.designsystem.theme.raisedColor
 import com.salihraphics.meow.core.window.ImmersiveDialogWindow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -81,7 +83,8 @@ fun SessionCheckDialog(
         Surface(
             modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(16.dp),
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surface,
+            // A step above the screen, so the dialog has an edge in the dark theme too.
+            color = raisedColor,
         ) {
             Column(Modifier.padding(20.dp)) {
                 when (check) {
@@ -223,7 +226,7 @@ private fun Results(check: SessionCheck.Checked, onDismiss: () -> Unit, onGoToPa
 
 @Composable
 private fun Stat(label: String, value: Int, color: Color, modifier: Modifier) {
-    Surface(modifier, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(modifier, shape = MaterialTheme.shapes.medium, color = insetColor) {
         Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$value", style = MaterialTheme.typography.headlineMedium, color = color, fontWeight = FontWeight.SemiBold)
             Text(label, style = MaterialTheme.typography.labelLarge)

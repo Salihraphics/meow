@@ -1,5 +1,10 @@
 package com.salihraphics.meow.feature.annotation
 
+import androidx.compose.animation.AnimatedVisibility
+import com.salihraphics.meow.core.designsystem.theme.MeowTokens
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -25,8 +30,6 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -91,17 +94,18 @@ fun AnnotationToolsSection(state: AnnotationToolState, actions: AnnotationAction
             Spacer(Modifier.weight(1f))
             UndoRedo(state, actions)
         }
-        when (state.tool) {
-            AnnotationTool.PEN -> {
-                Spacer(Modifier.height(6.dp))
-                FlowRow(verticalArrangement = Arrangement.Center) { PenColors(state, actions) }
-                FlowRow { PenWidths(state, actions) }
+        // The selected tool's settings, labelled: colour, then thickness.
+        AnimatedVisibility(state.tool == AnnotationTool.PEN || state.tool == AnnotationTool.HIGHLIGHTER) {
+            Column(Modifier.padding(top = 6.dp)) {
+                OptionLabel(stringResource(R.string.annotation_option_color))
+                FlowRow(Modifier.selectableGroup()) {
+                    if (state.tool == AnnotationTool.HIGHLIGHTER) HighlightColors(state, actions) else PenColors(state, actions)
+                }
+                OptionLabel(stringResource(R.string.annotation_option_width))
+                FlowRow(Modifier.selectableGroup()) {
+                    if (state.tool == AnnotationTool.HIGHLIGHTER) HighlightWidths(state, actions) else PenWidths(state, actions)
+                }
             }
-            AnnotationTool.HIGHLIGHTER -> {
-                Spacer(Modifier.height(6.dp))
-                FlowRow { HighlightColors(state, actions); Spacer(Modifier.width(8.dp)); HighlightWidths(state, actions) }
-            }
-            else -> Unit
         }
         if (state.tool != null) {
             Text(
@@ -144,17 +148,26 @@ fun AnnotationToolRail(
         when (state.tool) {
             AnnotationTool.PEN -> {
                 HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { PenColors(state, actions) }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { PenWidths(state, actions) }
+                Column(Modifier.selectableGroup(), horizontalAlignment = Alignment.CenterHorizontally) { PenColors(state, actions) }
+                // Colours above, thicknesses below.
+                HorizontalDivider(Modifier.width(20.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Column(Modifier.selectableGroup(), horizontalAlignment = Alignment.CenterHorizontally) { PenWidths(state, actions) }
             }
             AnnotationTool.HIGHLIGHTER -> {
                 HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { HighlightColors(state, actions) }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { HighlightWidths(state, actions) }
+                Column(Modifier.selectableGroup(), horizontalAlignment = Alignment.CenterHorizontally) { HighlightColors(state, actions) }
+                // Colours above, thicknesses below.
+                HorizontalDivider(Modifier.width(20.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Column(Modifier.selectableGroup(), horizontalAlignment = Alignment.CenterHorizontally) { HighlightWidths(state, actions) }
             }
             else -> Unit
         }
     }
+}
+
+@Composable
+private fun OptionLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
 }
 
 @Composable
@@ -173,17 +186,31 @@ private fun UndoRedo(state: AnnotationToolState, actions: AnnotationActions) {
     IconButton(onClick = actions.onRedo, enabled = state.canRedo) { Icon(MeowIcons.Redo, contentDescription = stringResource(R.string.annotation_redo)) }
 }
 
+/**
+ * A tool: unselected, a plain icon; selected, a filled tile in the primary colour with the icon
+ * in its contrasting colour. The tile's shape, not only its colour, says which tool is on.
+ */
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, selected: Boolean, onSelect: () -> Unit) {
-    IconToggleButton(
-        checked = selected,
-        onCheckedChange = { onSelect() },
-        colors = IconButtonDefaults.iconToggleButtonColors(
-            checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ),
+    val container by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, tween(120), label = "tool")
+    val content by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        tween(120),
+        label = "toolIcon",
+    )
+    Box(
+        Modifier
+            .size(MeowTokens.TouchTarget)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
+        Box(
+            Modifier.size(MeowTokens.ToolTile).background(container, MeowTokens.ControlShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(MeowTokens.ToolIcon))
+        }
     }
 }
 
@@ -191,7 +218,7 @@ private fun ToolButton(icon: ImageVector, label: String, selected: Boolean, onSe
 private fun PenColors(state: AnnotationToolState, actions: AnnotationActions) {
     AnnotationToolState.PEN_COLORS.forEachIndexed { index, color ->
         Swatch(selected = index == state.colorIndex, label = stringResource(colorNames[index]), onClick = { actions.onColor(index) }) {
-            Box(Modifier.size(22.dp).background(Color(color), CircleShape))
+            Box(Modifier.size(22.dp).background(Color(color), CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
         }
     }
 }
@@ -200,7 +227,8 @@ private fun PenColors(state: AnnotationToolState, actions: AnnotationActions) {
 private fun PenWidths(state: AnnotationToolState, actions: AnnotationActions) {
     AnnotationToolState.PEN_WIDTHS.forEachIndexed { index, _ ->
         Swatch(selected = index == state.widthIndex, label = stringResource(widthNames[index]), onClick = { actions.onWidth(index) }) {
-            Box(Modifier.size(listOf(6.dp, 10.dp, 15.dp)[index]).background(Color(state.penStyle.color), CircleShape))
+            // Thickness, drawn in the text colour so a black pen still shows on a dark panel.
+            Box(Modifier.size(listOf(6.dp, 10.dp, 15.dp)[index]).background(MaterialTheme.colorScheme.onSurface, CircleShape))
         }
     }
 }
@@ -224,6 +252,7 @@ private fun HighlightWidths(state: AnnotationToolState, actions: AnnotationActio
     }
 }
 
+/** A colour or width choice; the selected one has a thick ring with a gap, visible on any background. */
 @Composable
 private fun Swatch(selected: Boolean, label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     val ring = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
@@ -234,6 +263,6 @@ private fun Swatch(selected: Boolean, label: String, onClick: () -> Unit, conten
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(34.dp).border(2.dp, ring, CircleShape), contentAlignment = Alignment.Center) { content() }
+        Box(Modifier.size(36.dp).border(3.dp, ring, CircleShape).padding(5.dp), contentAlignment = Alignment.Center) { content() }
     }
 }

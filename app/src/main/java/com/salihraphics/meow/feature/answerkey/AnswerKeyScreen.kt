@@ -1,5 +1,7 @@
 package com.salihraphics.meow.feature.answerkey
 
+import com.salihraphics.meow.core.designsystem.theme.cardBorder
+import com.salihraphics.meow.core.designsystem.theme.cardColor
 import android.content.Intent
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -351,7 +353,7 @@ private fun KeyTest.needsAttention() = !isConfirmed && (missingQuestions(this).i
 private fun StatusCard(state: AnswerKeyUiState, find: FindKeyActions) {
     val status = state.status
     val tests = state.tests.orEmpty()
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.large, color = cardColor, border = cardBorder, modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 val mood = when {

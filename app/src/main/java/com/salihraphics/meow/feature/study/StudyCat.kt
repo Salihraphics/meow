@@ -26,7 +26,7 @@ class StudyCat(private val random: Random = Random.Default) {
     private val lastPicked = HashMap<List<Int>, Int>()
 
     fun tapped(state: StudyCatState, timer: TimerStatus): StudyCatState = when {
-        state.sleeping -> StudyCatState(false, MascotMood.Surprised, pick(WAKE))
+        state.sleeping -> StudyCatState(false, MascotMood.Waking, pick(WAKE))
         timer == TimerStatus.RUNNING -> StudyCatState(false, MascotMood.Happy, pick(TAP_STUDYING))
         else -> StudyCatState(false, if (random.nextBoolean()) MascotMood.Curious else MascotMood.Happy, pick(TAP_IDLE))
     }

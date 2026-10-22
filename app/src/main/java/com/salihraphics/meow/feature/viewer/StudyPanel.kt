@@ -1,5 +1,10 @@
 package com.salihraphics.meow.feature.viewer
 
+import com.salihraphics.meow.core.designsystem.theme.insetColor
+import com.salihraphics.meow.core.designsystem.theme.cardColor
+import com.salihraphics.meow.core.designsystem.theme.MeowTokens
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -17,7 +22,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,26 +83,37 @@ fun StudyPanel(state: StudyPanelState, modifier: Modifier = Modifier, header: @C
             Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = MeowTokens.Space.m, vertical = MeowTokens.Space.s),
+            verticalArrangement = Arrangement.spacedBy(MeowTokens.Space.m),
         ) {
-            PanelHeading(stringResource(R.string.panel_tools_heading))
-            AnnotationToolsSection(state.tools, state.toolActions)
-
-            state.workspace.timer?.let { timer ->
-                PanelDivider()
-                PanelHeading(stringResource(R.string.timer_heading))
-                StudyTimerSection(timer, state.document.id)
+            // Most used first: tools, then the timer, notes, view and the document.
+            PanelCard {
+                PanelHeading(stringResource(R.string.panel_tools_heading))
+                AnnotationToolsSection(state.tools, state.toolActions)
             }
-
-            PanelDivider()
-            NotesSection(state)
-
-            PanelDivider()
-            ViewSection(state)
-
-            PanelDivider()
-            DocumentSection(state.document, state.pageCount)
+            state.workspace.timer?.let { timer ->
+                PanelCard {
+                    PanelHeading(stringResource(R.string.timer_heading))
+                    StudyTimerSection(timer, state.document.id)
+                }
+            }
+            PanelCard { NotesSection(state) }
+            PanelCard { ViewSection(state) }
+            PanelCard { DocumentSection(state.document, state.pageCount) }
         }
+    }
+}
+
+/** One group of the panel: a card one step off the panel's background, with a hairline edge. */
+@Composable
+private fun PanelCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = MeowTokens.CardShape,
+        color = cardColor,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = MeowTokens.Space.l, vertical = MeowTokens.Space.m), content = content)
     }
 }
 
@@ -106,14 +121,11 @@ fun StudyPanel(state: StudyPanelState, modifier: Modifier = Modifier, header: @C
 private fun PanelHeading(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(bottom = 6.dp).semantics { heading() },
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(bottom = MeowTokens.Space.s).semantics { heading() },
     )
 }
-
-@Composable
-private fun PanelDivider() = HorizontalDivider(Modifier.padding(vertical = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
 @Composable
 private fun NotesSection(state: StudyPanelState) {
@@ -239,7 +251,7 @@ private fun DocumentSection(document: PdfDocument, pageCount: Int) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(Modifier.height(12.dp))
-    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MeowTokens.ControlShape, color = insetColor, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text(stringResource(R.string.viewer_next_steps_heading), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(4.dp))

@@ -1,5 +1,7 @@
 package com.salihraphics.meow.feature.library
 
+import com.salihraphics.meow.core.designsystem.theme.cardBorder
+import com.salihraphics.meow.core.designsystem.theme.cardColor
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -273,7 +275,8 @@ private fun ImportingBanner() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(6.dp))
-        LinearProgressIndicator(Modifier.fillMaxWidth())
+        // A visible track in both themes, not just the moving bar.
+        LinearProgressIndicator(Modifier.fillMaxWidth(), trackColor = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -339,7 +342,8 @@ private fun DocumentCard(
         Surface(
             onClick = onOpen,
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainer,
+            color = cardColor,
+            border = cardBorder,
             shadowElevation = 1.dp,
             modifier = Modifier.fillMaxWidth().aspectRatio(0.75f),
         ) {

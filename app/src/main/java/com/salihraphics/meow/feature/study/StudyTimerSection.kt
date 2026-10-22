@@ -1,5 +1,14 @@
 package com.salihraphics.meow.feature.study
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,6 +67,8 @@ fun StudyTimerSection(controller: StudyTimerController, documentId: String?, mod
     var now by remember { mutableLongStateOf(controller.now()) }
     val cat = remember { StudyCat() }
     var catState by remember { mutableStateOf(StudyCatState()) }
+    // Kept while the bubble fades out, so it doesn't empty first.
+    var lastLine by remember { mutableStateOf<CatLine?>(null) }
 
     LaunchedEffect(timer.status) {
         now = controller.now()
@@ -84,6 +95,7 @@ fun StudyTimerSection(controller: StudyTimerController, documentId: String?, mod
         }
     }
     LaunchedEffect(catState.line) {
+        catState.line?.let { lastLine = it }
         if (catState.line != null) {
             delay(StudyCat.BUBBLE_MS)
             catState = cat.quiet(catState)
@@ -97,60 +109,73 @@ fun StudyTimerSection(controller: StudyTimerController, documentId: String?, mod
     }
 
     Column(modifier) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            CompositionLocalProvider(LocalMeowMotion provides LocalMeowMotion.current.copy(ambientAnimations = false)) {
-                MeowCat(catState.mood, Modifier.size(72.dp), onTap = { catState = cat.tapped(catState, timer.status) })
-            }
-            Spacer(Modifier.width(8.dp))
-            catState.line?.let { line ->
+        // The bubble sits above the cat, so it never squeezes the timer beside a narrow panel.
+        AnimatedVisibility(
+            visible = catState.line != null,
+            enter = fadeIn(tween(150)) + expandVertically(tween(150)),
+            exit = fadeOut(tween(150)) + shrinkVertically(tween(150)),
+        ) {
+            (catState.line ?: lastLine)?.let { line ->
                 val text = line.minutes?.let { stringResource(line.text, it) } ?: stringResource(line.text)
-                SpeechBubble(text, Modifier.weight(1f, fill = false), tail = BubbleTail.BottomStart)
+                SpeechBubble(text, Modifier.padding(bottom = 4.dp), tail = BubbleTail.BottomStart)
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CompositionLocalProvider(LocalMeowMotion provides LocalMeowMotion.current.copy(ambientAnimations = false)) {
+                MeowCat(catState.mood, Modifier.size(64.dp), onTap = { catState = cat.tapped(catState, timer.status) })
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
 
-        val remaining = timer.remainingMs(now)
-        val clock = formatClock(remaining)
-        Text(
-            clock,
-            style = MaterialTheme.typography.displaySmall,
-            modifier = Modifier.semantics {
-                contentDescription = clock
-                liveRegion = LiveRegionMode.Polite
-            },
-        )
-        val remainingLabel = stringResource(R.string.timer_remaining, clock)
+                val remaining = timer.remainingMs(now)
+                val clock = formatClock(remaining)
+                // Tabular digits: the time doesn't jitter as it counts down.
+                Text(
+                    clock,
+                    style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
+                    color = if (timer.status == TimerStatus.RUNNING) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics {
+                        contentDescription = clock
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                )
+                Text(
+                    when (timer.status) {
+                        TimerStatus.PAUSED -> stringResource(R.string.timer_paused) + " · " + stringResource(R.string.timer_elapsed, formatClock(timer.elapsedMs(now), roundUp = false))
+                        TimerStatus.COMPLETED -> stringResource(R.string.timer_completed)
+                        else -> stringResource(R.string.timer_elapsed, formatClock(timer.elapsedMs(now), roundUp = false))
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        val remainingLabel = stringResource(R.string.timer_remaining, formatClock(timer.remainingMs(now)))
         LinearProgressIndicator(
             progress = { (timer.elapsedMs(now).toFloat() / timer.durationMs).coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = remainingLabel },
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            drawStopIndicator = {},
+            modifier = Modifier.fillMaxWidth().height(6.dp).semantics { contentDescription = remainingLabel },
         )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            when (timer.status) {
-                TimerStatus.PAUSED -> stringResource(R.string.timer_paused) + " · " + stringResource(R.string.timer_elapsed, formatClock(timer.elapsedMs(now), roundUp = false))
-                TimerStatus.COMPLETED -> stringResource(R.string.timer_completed)
-                else -> stringResource(R.string.timer_elapsed, formatClock(timer.elapsedMs(now), roundUp = false))
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            val main = Modifier.weight(1f)
             when (timer.status) {
-                TimerStatus.IDLE -> Button(onClick = { controller.start(documentId) }) {
+                TimerStatus.IDLE -> Button(onClick = { controller.start(documentId) }, modifier = main) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null)
                     Text(stringResource(R.string.timer_start))
                 }
-                TimerStatus.RUNNING -> Button(onClick = controller::pause) {
+                TimerStatus.RUNNING -> FilledTonalButton(onClick = controller::pause, modifier = main) {
                     Icon(MeowIcons.Pause, contentDescription = null)
                     Text(stringResource(R.string.timer_pause))
                 }
-                TimerStatus.PAUSED -> Button(onClick = controller::resume) {
+                TimerStatus.PAUSED -> Button(onClick = controller::resume, modifier = main) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null)
                     Text(stringResource(R.string.timer_resume))
                 }
-                TimerStatus.COMPLETED -> Button(onClick = { controller.reset() }) { Text(stringResource(R.string.timer_new)) }
+                TimerStatus.COMPLETED -> Button(onClick = { controller.reset() }, modifier = main) { Text(stringResource(R.string.timer_new)) }
             }
             if (timer.status == TimerStatus.RUNNING || timer.status == TimerStatus.PAUSED) {
                 OutlinedButton(onClick = controller::reset) {

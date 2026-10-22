@@ -41,8 +41,10 @@ fun SpeechBubble(
             .semantics { liveRegion = LiveRegionMode.Polite },
         shape = BubbleShape(tail),
         // Lifted above the background in both themes.
+        // Light: a soft lavender that stands out on cream and on white cards alike. Dark: the
+        // raised surface, a step above cards.
         color = if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-        else MaterialTheme.colorScheme.surfaceContainerLowest,
+        else MaterialTheme.colorScheme.primaryContainer,
         shadowElevation = 2.dp,
     ) {
         AnimatedContent(
@@ -53,7 +55,7 @@ fun SpeechBubble(
             Text(
                 value,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp + TailHeight),
             )
         }
