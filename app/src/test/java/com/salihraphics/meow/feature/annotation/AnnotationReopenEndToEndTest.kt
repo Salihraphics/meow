@@ -80,6 +80,20 @@ class AnnotationReopenEndToEndTest {
             ) as T
         })[PdfViewerViewModel::class]
 
+    /**
+     * The first page's saved ink loads on Room's thread and comes back on the main looper; the
+     * pen takes input once it has. Compose's idling doesn't see Room, so pump the looper here.
+     */
+    private fun waitForFirstPage(vm: PdfViewerViewModel) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (((vm.state.value as? com.salihraphics.meow.feature.viewer.ViewerUiState.Ready)?.annotations?.strokes(0)?.value) == null) {
+            check(System.currentTimeMillis() < deadline) { "page 1 never loaded" }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
+        rule.waitForIdle()
+    }
+
     private fun pixelAt(fx: Float, fy: Float): Int {
         rule.waitForIdle()
         val node = rule.onNode(hasContentDescription("Sayfa 1 / 6")).fetchSemanticsNode()
@@ -114,6 +128,9 @@ class AnnotationReopenEndToEndTest {
             }
         }
         rule.waitForIdle()
+        // The page's saved strokes load on Room's thread, which Compose's idling doesn't track;
+        // the pen takes input once they have.
+        waitForFirstPage(vm)
 
         // Draw a red line with the pen.
         listOf("Kalem", "Kırmızı", "Kalın çizgi").forEach {
@@ -171,6 +188,7 @@ class AnnotationReopenEndToEndTest {
             rule.waitForIdle()
         }
 
+        waitForFirstPage(vm)
         tap("Fosforlu kalem")
         rule.onNode(hasContentDescription("Sayfa 1 / 6")).performTouchInput {
             swipe(Offset(width * 0.2f, height * 0.3f), Offset(width * 0.8f, height * 0.3f), 400)

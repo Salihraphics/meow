@@ -433,4 +433,56 @@ class StudyWorkspaceTest {
         tap("Süreyi 5 dakika kısalt")
         assertEquals(30 * StudyTimer.MINUTE_MS, timer.timer.value.durationMs)
     }
+
+    @Test
+    fun holdingPlusOrMinusChangesTheDurationFastAndStopsAtTheLimits() {
+        start(tablet)
+        val plus = rule.onNode(hasContentDescription("Süreyi 5 dakika uzat"))
+        runCatching { plus.performScrollTo() }
+        plus.performTouchInput { down(center) }
+        rule.mainClock.advanceTimeBy(6_000)
+        rule.waitForIdle()
+        plus.performTouchInput { up() }
+        rule.waitForIdle()
+        assertEquals(StudyTimer.MAX_DURATION_MS, timer.timer.value.durationMs)
+        rule.onNode(hasText("Süre: 180 dk")).fetchSemanticsNode()
+
+        val minus = rule.onNode(hasContentDescription("Süreyi 5 dakika kısalt"))
+        minus.performTouchInput { down(center) }
+        rule.mainClock.advanceTimeBy(6_000)
+        rule.waitForIdle()
+        minus.performTouchInput { up() }
+        rule.waitForIdle()
+        assertEquals(StudyTimer.MIN_DURATION_MS, timer.timer.value.durationMs)
+
+        // A tap is still exactly one step.
+        tap("Süreyi 5 dakika uzat")
+        assertEquals(StudyTimer.MIN_DURATION_MS + 5 * StudyTimer.MINUTE_MS, timer.timer.value.durationMs)
+    }
+
+    @Test
+    fun theDurationCannotChangeDuringASession() {
+        start(tablet)
+        tap("Başlat")
+        val plus = rule.onNode(hasContentDescription("Süreyi 5 dakika uzat"))
+        plus.performTouchInput { down(center) }
+        rule.mainClock.advanceTimeBy(2_000)
+        plus.performTouchInput { up() }
+        rule.waitForIdle()
+        assertEquals(25 * StudyTimer.MINUTE_MS, timer.timer.value.durationMs)
+    }
+
+    @Test
+    fun theStudyWorkspaceKeepsTheScreenOnAndHidesTheBars() {
+        start(tablet)
+        val window = rule.activity.window
+        assertTrue(window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0)
+        val insets = androidx.core.view.ViewCompat.getRootWindowInsets(window.decorView)!!
+        assertFalse(insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()))
+        assertFalse(insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.navigationBars()))
+        // A dialog from the workspace (here "Sayfaya git" via the page controls) stays immersive.
+        tap("Sayfaya git")
+        rule.onNode(hasText("Git")).fetchSemanticsNode()
+        assertFalse(androidx.core.view.ViewCompat.getRootWindowInsets(window.decorView)!!.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()))
+    }
 }

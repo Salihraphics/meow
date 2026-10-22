@@ -93,11 +93,29 @@ keys must still be there after updating.
 - [ ] End a session early after a few minutes: a gentle message with the minutes. The cat says
       different things on repeated taps, falls asleep after a few idle minutes, and wakes on tap.
 
-## 5. Your data after updating
+## 5. Fullscreen, screen timeout, timer buttons
+- [ ] Open a PDF on a phone and on a tablet, in portrait and landscape: no status bar (clock,
+      icons) and no navigation bar; the top bar and the panel reach the edges with no empty strip.
+      On a phone with a camera notch, nothing important sits under the notch.
+- [ ] Swipe from the top or bottom edge: the bars appear for a moment over the app, then hide by
+      themselves. Back works (gesture or the briefly shown back button).
+- [ ] Bars stay hidden after: opening and closing "Sayfaya git", a note's text editor (with the
+      keyboard), the answer dialogs, the phone's study panel drawer; turning the device; pulling
+      down the notification shade; leaving the app and coming back; closing and reopening the PDF.
+- [ ] Leave the PDF (back to the library, the answer key, settings): the bars are back as normal.
+- [ ] Set the device's screen timeout to 30 s. In a PDF, read without touching for 2–3 minutes:
+      the screen stays on (while reading, after writing a note, and with the timer running).
+      Back in the library, the screen turns off after 30 s again. The system setting is unchanged.
+- [ ] Timer −/+: a tap changes 5 minutes. Hold +: after a short moment it keeps going, a little
+      faster, and stops at 180 dk; hold −: stops at 5 dk. Releasing stops at once, with no extra
+      step. Sliding the finger off the button while holding also stops it. TalkBack: "Süreyi 5
+      dakika uzat/kısalt" are buttons and a double tap changes 5 minutes.
+
+## 6. Your data after updating
 - [ ] Update over the previous version (`adb install -r`, do not uninstall): the library, last
       pages, drawings, marked answers, confirmed keys and corrections are all still there.
 
-## 6. Nothing else broke
+## 7. Nothing else broke
 - [ ] Reading, scrolling, zooming, go-to-page, and last-read page work as before.
 - [ ] Pen, eraser, colours, undo/redo work on pages with and without questions.
 - [ ] Tablet (or phone in landscape): the side panel, the answer section and dialogs fit.

@@ -13,7 +13,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -39,6 +38,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.salihraphics.meow.R
 import com.salihraphics.meow.core.designsystem.component.BubbleTail
+import com.salihraphics.meow.core.designsystem.component.RepeatingButton
 import com.salihraphics.meow.core.designsystem.component.SpeechBubble
 import com.salihraphics.meow.core.designsystem.icon.MeowIcons
 import com.salihraphics.meow.core.designsystem.theme.LocalMeowMotion
@@ -162,16 +162,23 @@ fun StudyTimerSection(controller: StudyTimerController, documentId: String?, mod
 
         val minutes = (timer.durationMs / StudyTimer.MINUTE_MS).toInt()
         val canChange = timer.status == TimerStatus.IDLE || timer.status == TimerStatus.COMPLETED
+        // Read fresh on every repeat while a button is held.
+        fun current() = controller.timer.value
+        fun canGoDown() = current().let { (it.status == TimerStatus.IDLE || it.status == TimerStatus.COMPLETED) && it.durationMs > StudyTimer.MIN_DURATION_MS }
+        fun canGoUp() = current().let { (it.status == TimerStatus.IDLE || it.status == TimerStatus.COMPLETED) && it.durationMs < StudyTimer.MAX_DURATION_MS }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.timer_duration, minutes), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            val less = stringResource(R.string.timer_duration_less)
-            val more = stringResource(R.string.timer_duration_more)
-            IconButton(onClick = { controller.setDurationMinutes(minutes - 5) }, enabled = canChange && minutes > 5) {
-                Text("−", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = less })
-            }
-            IconButton(onClick = { controller.setDurationMinutes(minutes + 5) }, enabled = canChange && minutes < 180) {
-                Text("+", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = more })
-            }
+            // Tap: 5 minutes. Hold: keeps going, a little faster the longer it's held.
+            RepeatingButton(
+                label = stringResource(R.string.timer_duration_less),
+                enabled = canChange && timer.durationMs > StudyTimer.MIN_DURATION_MS,
+                onStep = { canGoDown().also { if (it) controller.adjustDurationMinutes(-DURATION_STEP_MINUTES) } },
+            ) { Text("−", style = MaterialTheme.typography.titleLarge) }
+            RepeatingButton(
+                label = stringResource(R.string.timer_duration_more),
+                enabled = canChange && timer.durationMs < StudyTimer.MAX_DURATION_MS,
+                onStep = { canGoUp().also { if (it) controller.adjustDurationMinutes(DURATION_STEP_MINUTES) } },
+            ) { Text("+", style = MaterialTheme.typography.titleLarge) }
         }
         Text(
             if (stats.studiedMs > 0 || stats.completedSessions > 0) {
@@ -184,6 +191,8 @@ fun StudyTimerSection(controller: StudyTimerController, documentId: String?, mod
         )
     }
 }
+
+private const val DURATION_STEP_MINUTES = 5
 
 /** "24:59", or "1:04:59" past an hour. A countdown rounds up, so it reads 00:00 only when time is up. */
 fun formatClock(ms: Long, roundUp: Boolean = true): String {

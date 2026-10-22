@@ -181,6 +181,12 @@ class AnswerCheckingEndToEndTest {
         }
     }
 
+    /** The answer strip follows the database through a flow; tap its button once it shows. */
+    private fun checkTheTest() {
+        waitForText("Testi kontrol et")
+        rule.onNodeWithText("Testi kontrol et").performClick()
+    }
+
     private fun waitForText(text: String) =
         until { rule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
 
@@ -226,7 +232,7 @@ class AnswerCheckingEndToEndTest {
         circle(4, "C") // correct; 3 left blank
         until { answered().size == 3 }
         waitForText("3 cevap işaretlendi")
-        rule.onNodeWithText("Testi kontrol et").performClick()
+        checkTheTest()
         waitForText("Test sonucu")
         rule.onNodeWithText("Soru 2 · Senin cevabın B · Doğrusu D").assertExists()
         rule.onNodeWithText("Soru 3 · Doğrusu E").assertExists()
@@ -331,7 +337,7 @@ class AnswerCheckingEndToEndTest {
         show()
         circle(4, "C")
         until { answered().isNotEmpty() }
-        rule.onNodeWithText("Testi kontrol et").performClick()
+        checkTheTest()
         waitForText("önce cevap anahtarını onaylaman")
         assertEquals(AttemptResult.PENDING, attempts().single().result)
         rule.onNodeWithText("Cevap anahtarını aç").performClick()
@@ -339,7 +345,7 @@ class AnswerCheckingEndToEndTest {
         assertTrue(openedKey)
         // After confirming, the same answers are checked.
         runBlocking { keys.confirm("doc-1") }
-        rule.onNodeWithText("Testi kontrol et").performClick()
+        checkTheTest()
         waitForText("Test sonucu")
     }
 
@@ -354,7 +360,7 @@ class AnswerCheckingEndToEndTest {
         show()
         circle(1, "A")
         until { answered().isNotEmpty() }
-        rule.onNodeWithText("Testi kontrol et").performClick()
+        checkTheTest()
         waitForText("hangi teste ait")
         rule.onNodeWithText("Test 1").performClick()
         waitForText("Test sonucu")
@@ -425,7 +431,7 @@ class AnswerCheckingEndToEndTest {
         show()
         circle(2, "A")
         waitForText("Soru 2: A işaretlendi")
-        rule.onNodeWithText("Testi kontrol et").performClick()
+        checkTheTest()
         waitForText("henüz bir cevap anahtarı yok")
         assertEquals(1, annotations.all.size)
     }

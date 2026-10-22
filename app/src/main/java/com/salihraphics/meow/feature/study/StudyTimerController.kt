@@ -91,6 +91,12 @@ class StudyTimerController(
 
     fun setDurationMinutes(minutes: Int) = change { t -> t.withDuration(minutes * StudyTimer.MINUTE_MS) }
 
+    /**
+     * Lengthens or shortens the session by [deltaMinutes] from its current length, within the
+     * limits. For the held −/+ buttons: each step builds on the last even if saving lags.
+     */
+    fun adjustDurationMinutes(deltaMinutes: Int) = change { t -> t.withDuration(t.durationMs + deltaMinutes * StudyTimer.MINUTE_MS) }
+
     /** Checks whether time is up; the UI calls this as it redraws, the ticker otherwise. */
     fun tick() = change { t -> completeIfDue(t) }
 

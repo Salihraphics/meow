@@ -1,5 +1,7 @@
 package com.salihraphics.meow.feature.viewer
 
+import com.salihraphics.meow.core.window.StudyWindowEffect
+import com.salihraphics.meow.core.window.ImmersiveDialogWindow
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -161,7 +163,9 @@ fun PdfViewerContent(
     answers: ViewerAnswers = ViewerAnswers(),
     answerActions: ViewerAnswerActions = ViewerAnswerActions(),
     workspace: ViewerWorkspace = ViewerWorkspace(),
-) {
+) = StudyWindowEffect {
+    // Immersive: the bars are hidden, so safeDrawing only keeps a display cutout (or the
+    // keyboard) clear; no strip is left where the bars were.
     Box(
         Modifier
             .fillMaxSize()
@@ -311,6 +315,7 @@ private fun ReadyViewer(
         val check = answers.check
         if (check != null && check !is AnswerCheckUi.Recorded) {
             Dialog(onDismissRequest = actions.onDismissCheck) {
+                ImmersiveDialogWindow()
                 AnswerCheckCard(
                     check = check,
                     onChoose = actions.onChooseOption,
@@ -480,6 +485,7 @@ private fun NoteEditDialog(note: StickyNote, onSave: (String) -> Unit, onDelete:
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.note_edit)) },
         text = {
+            ImmersiveDialogWindow()
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it.take(MAX_NOTE_LENGTH) },
@@ -509,6 +515,7 @@ private fun GoToPageDialog(pageCount: Int, onDismiss: () -> Unit, onGo: (Int) ->
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.viewer_go_to_page)) },
         text = {
+            ImmersiveDialogWindow()
             OutlinedTextField(
                 value = text,
                 onValueChange = { value -> text = value.filter(Char::isDigit).take(6) },

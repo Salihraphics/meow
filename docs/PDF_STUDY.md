@@ -31,6 +31,20 @@
   PDF (`pdf_documents.viewRotation`, database v6); the PDF file is never changed.
 - The reading position is saved a moment after scrolling stops, and on leaving the screen.
 
+**Study window** (`core/window/StudyWindow`)
+- The app draws edge to edge everywhere and screens pad themselves with
+  `WindowInsets.safeDrawing`, so elsewhere the status and navigation bars stay visible. While a
+  PDF is open the window is immersive: both bars are hidden (`WindowInsetsControllerCompat`,
+  `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`: a swipe from the edge shows them for a moment, then
+  they hide again). Hidden bars have no insets, so the workspace gets the whole screen and only a
+  display cutout (or the keyboard) is kept clear. The bars are hidden again on every resume and
+  whenever the window regains focus; dialogs opened from the workspace (go to page, note text,
+  answers, results) hide them in their own windows too (`ImmersiveDialogWindow`).
+- The screen stays on while the workspace is shown (`FLAG_KEEP_SCREEN_ON` on the window, not a
+  wake lock: it only holds while the window is visible). Leaving the workspace, for the library,
+  the answer key or settings, clears the flag and shows the bars again. The system's
+  screen-timeout setting is never changed.
+
 **Study workspace layout** (`PdfViewerScreen`, `StudyPanel`, `AnnotationTools`)
 - Nothing is drawn over the pages: no floating toolbar, chip or card. The pages are on the left.
 - Tablets and landscape (window `useTwoPanes` or expanded width): a scrolling study panel on the
@@ -94,7 +108,8 @@ save at once. A page's notes load with its strokes; a note added before that fin
 
 **Study timer** (`feature/study`, tables `study_timer` and `study_sessions`)
 - One timer for the app (it keeps running across PDFs), 25 minutes by default, 5–180 in steps of
-  5. Elapsed time is banked time plus the time since the last start on a monotonic clock
+  5. −/+ step once on a tap; held, they repeat after 0.4 s, a little faster each time (220 ms
+  down to 70 ms), stop at the limits and stop at once on release (`RepeatingButton`). Elapsed time is banked time plus the time since the last start on a monotonic clock
   (`SystemClock.elapsedRealtime`), never a counter, so it stays right while the app is in the
   background. The display recomputes it once a second while running.
 - Saved on every change, every 30 s while running, and when the app goes to the background. If

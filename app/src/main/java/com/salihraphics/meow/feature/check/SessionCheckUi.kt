@@ -1,5 +1,6 @@
 package com.salihraphics.meow.feature.check
 
+import com.salihraphics.meow.core.window.ImmersiveDialogWindow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -76,6 +77,7 @@ fun SessionCheckDialog(
     onAssignTest: (testId: String, pages: List<Int>) -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        ImmersiveDialogWindow()
         Surface(
             modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(16.dp),
             shape = MaterialTheme.shapes.extraLarge,
@@ -126,6 +128,7 @@ fun AnswerSheetDialog(answers: List<AnswerAttempt>, onClear: (AnswerAttempt) -> 
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.sheet_title)) },
         text = {
+            ImmersiveDialogWindow()
             Column {
                 Text(stringResource(R.string.sheet_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
