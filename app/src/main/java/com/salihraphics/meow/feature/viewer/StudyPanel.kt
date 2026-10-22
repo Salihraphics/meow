@@ -120,6 +120,8 @@ private fun NotesSection(state: StudyPanelState) {
     val page = state.viewport.currentPage
     LaunchedEffect(page) { state.session.load(page) }
     val notes by remember(page) { state.session.notes(page) }.collectAsState()
+    val strokes by remember(page) { state.session.strokes(page) }.collectAsState()
+    val inked = strokes.orEmpty().mapNotNull { it.noteId }.toSet()
     PanelHeading(stringResource(R.string.notes_heading))
     FilledTonalButton(onClick = state.onAddNote) {
         Icon(MeowIcons.StickyNote, contentDescription = null)
@@ -138,7 +140,7 @@ private fun NotesSection(state: StudyPanelState) {
         list.forEach { note ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    note.text.ifBlank { stringResource(R.string.note_empty) },
+                    note.text.ifBlank { stringResource(if (note.id in inked) R.string.note_handwritten else R.string.note_empty) },
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

@@ -284,6 +284,10 @@ class StudyWorkspaceTest {
     fun aNoteIsCreatedTypedMovedResizedAndDeleted() {
         start(tablet)
         tap("Not ekle")
+        // Placed empty, no questions asked.
+        assertTrue(rule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().isEmpty())
+        assertEquals("", repo.notes.values.single().text)
+        tap("Yazı yaz")
         rule.onNode(hasSetTextAction()).performTextInput("Türev kuralları")
         rule.onNode(hasText("Kaydet")).performClick()
         rule.waitForIdle()
@@ -314,31 +318,78 @@ class StudyWorkspaceTest {
     }
 
     @Test
-    fun withThePenOutDraggingOnANoteNeverDrawsUnderIt() {
+    fun withThePenTheStudentWritesOnTheNoteItselfAndTheInkTravelsWithIt() {
         start(tablet)
         tap("Not ekle")
+        val note = repo.notes.values.single()
+        tap("Kalem")
+        tap("Kırmızı")
+        tap("Kalın çizgi")
+        val box = rule.onNode(hasContentDescription("Not: Boş not"))
+        box.performTouchInput { swipe(Offset(width * 0.2f, height * 0.5f), Offset(width * 0.8f, height * 0.5f), 300) }
+        rule.waitForIdle()
+
+        // The ink is the note's, in the note's own fractions; nothing went onto the page, and it
+        // isn't taken as an answer mark.
+        val ink = repo.all.values.single()
+        assertEquals(note.id, ink.noteId)
+        assertEquals(0.2f, xs(ink).first(), 0.02f)
+        assertEquals(0.8f, xs(ink).last(), 0.02f)
+        assertTrue(ys(ink).all { abs(it - 0.5f) < 0.02f })
+        assertTrue(marks.isEmpty())
+        assertTrue(rule.onAllNodes(hasContentDescription("Not: El yazılı not")).fetchSemanticsNodes().isNotEmpty())
+        val shownBefore = rule.onNode(hasContentDescription("Not: El yazılı not")).fetchSemanticsNode().boundsInRoot
+        val pixelBefore = screenshot().getPixel(shownBefore.center.x.toInt(), shownBefore.center.y.toInt())
+        assertTrue(isRed(pixelBefore))
+
+        // Moving the note with its handle (the pen is still out) takes the writing along.
+        rule.onNode(hasContentDescription("Notu taşı")).performTouchInput { swipe(center, center + Offset(150f, 90f), 300) }
+        rule.waitForIdle()
+        val moved = repo.notes.values.single()
+        assertTrue(moved.x > note.x && moved.y > note.y)
+        assertEquals(ink, repo.all.values.single()) // stored ink unchanged: it is relative to the note
+        val shownAfter = rule.onNode(hasContentDescription("Not: El yazılı not")).fetchSemanticsNode().boundsInRoot
+        assertTrue(isRed(screenshot().getPixel(shownAfter.center.x.toInt(), shownAfter.center.y.toInt())))
+
+        // Off the note, the pen still draws on the page.
+        drawOn(page(1), Offset(0.1f, 0.6f), Offset(0.3f, 0.6f))
+        assertEquals(listOf(null), repo.all.values.filter { it.id != ink.id }.map { it.noteId })
+
+        // The eraser on the note removes its writing; undo brings it back.
+        tap("Silgi")
+        rule.onNode(hasContentDescription("Not: El yazılı not")).performTouchInput { swipe(Offset(width * 0.5f, height * 0.2f), Offset(width * 0.5f, height * 0.8f), 300) }
+        rule.waitForIdle()
+        assertTrue(ink.id in repo.deleted)
+        tap("Geri al")
+        assertFalse(ink.id in repo.deleted)
+    }
+
+    @Test
+    fun aNoteCanHoldBothHandwritingAndTypedText() {
+        start(tablet)
+        tap("Not ekle")
+        tap("Kalem")
+        rule.onNode(hasContentDescription("Not: Boş not")).performTouchInput { swipe(Offset(width * 0.3f, height * 0.7f), Offset(width * 0.7f, height * 0.7f), 300) }
+        rule.waitForIdle()
+        tap("Yazı yaz")
+        rule.onNode(hasSetTextAction()).performTextInput("Sınavdan önce")
         rule.onNode(hasText("Kaydet")).performClick()
         rule.waitForIdle()
-        tap("Kalem")
-        rule.onNode(hasContentDescription("Not: Not yaz…")).performTouchInput { swipe(center, center + Offset(60f, 0f), 300) }
-        rule.waitForIdle()
-        assertTrue("no ink under the note", repo.all.isEmpty())
-        // Off the note, the pen still draws.
-        drawOn(page(1), Offset(0.6f, 0.5f), Offset(0.8f, 0.5f))
-        assertEquals(1, repo.all.size)
+        val note = repo.notes.values.single()
+        assertEquals("Sınavdan önce", note.text)
+        assertEquals(note.id, repo.all.values.single().noteId)
+        rule.onNode(hasContentDescription("Not: Sınavdan önce")).fetchSemanticsNode()
     }
 
     @Test
     fun notesStayOnTheirPrintedSpotWhenThePageIsTurned() {
         start(tablet)
         tap("Not ekle")
-        rule.onNode(hasText("Kaydet")).performClick()
-        rule.waitForIdle()
         val note = repo.notes.values.single()
-        val before = rule.onNode(hasContentDescription("Not: Not yaz…")).fetchSemanticsNode().boundsInRoot
+        val before = rule.onNode(hasContentDescription("Not: Boş not")).fetchSemanticsNode().boundsInRoot
         tap("Sağa döndür")
         val p = page(1).fetchSemanticsNode()
-        val after = rule.onNode(hasContentDescription("Not: Not yaz…")).fetchSemanticsNode().boundsInRoot
+        val after = rule.onNode(hasContentDescription("Not: Boş not")).fetchSemanticsNode().boundsInRoot
         // The note's top-left page corner is shown at the top-right of its turned box.
         val corner = PageRotation.toShown(Offset(note.x, note.y), p.size.width.toFloat(), p.size.height.toFloat(), 90)
         assertEquals(p.positionInRoot.x + corner.x, after.right, 3f)

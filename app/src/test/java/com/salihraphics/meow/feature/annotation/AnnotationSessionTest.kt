@@ -126,7 +126,7 @@ class AnnotationSessionTest {
         val note = s.addNote(3)
         assertEquals(3, note.pageIndex)
         assertEquals(note.id, s.selectedNote.value)
-        assertEquals(note, s.editingNote.value)
+        assertNull(s.editingNote.value) // placed empty: write on it, or type when asked
         s.updateNote(note.copy(text = "Sınavdan önce bak", x = 0.6f, y = 0.7f))
         assertEquals("Sınavdan önce bak", repo.notes[note.id]!!.text)
 
@@ -173,5 +173,21 @@ class AnnotationSessionTest {
         gate.complete(Unit)
         kotlinx.coroutines.yield()
         assertEquals(setOf(added.id, "old"), s.notes(0).value!!.map { it.id }.toSet())
+    }
+
+    @Test
+    fun inkWrittenOnANoteBelongsToItAndIsNeverAnAnswerMark() {
+        val checked = mutableListOf<Stroke>()
+        val s = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined), onStrokeAdded = { checked += it }) { "s${ids++}" }
+        s.load(0)
+        val note = s.addNote(0)
+        // On a note a third of the page wide, the pen is stored three times as wide (of the note).
+        s.addStroke(0, line(0.1f, 0.5f, 0.9f, 0.5f), AnnotationTool.PEN, note.id, widthScale = 3f)
+        val ink = repo.all.values.single()
+        assertEquals(note.id, ink.noteId)
+        assertEquals(AnnotationToolState.PEN_WIDTHS[1] * 3f, ink.width, 1e-6f)
+        assertTrue(checked.isEmpty())
+        s.undo()
+        assertTrue(ink.id in repo.deleted)
     }
 }

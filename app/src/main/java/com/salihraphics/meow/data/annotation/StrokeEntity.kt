@@ -1,5 +1,6 @@
 package com.salihraphics.meow.data.annotation
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -25,6 +26,8 @@ data class StrokeEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val deletedAt: Long?,
+    /** The sticky note this ink was written on; its points are then fractions of the note. */
+    @ColumnInfo(defaultValue = "NULL") val noteId: String? = null,
 ) {
     fun toDomain() = Stroke(
         id = id,
@@ -34,6 +37,7 @@ data class StrokeEntity(
         color = color,
         width = width,
         points = decodePoints(points),
+        noteId = noteId,
     )
 
     override fun equals(other: Any?) = other is StrokeEntity && other.id == id && other.updatedAt == updatedAt
@@ -51,6 +55,7 @@ data class StrokeEntity(
             createdAt = now,
             updatedAt = now,
             deletedAt = null,
+            noteId = stroke.noteId,
         )
 
         fun encodePoints(points: FloatArray): ByteArray {

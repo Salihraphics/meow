@@ -201,7 +201,10 @@
     <string name="duration_minutes">%1$d dk</string>
     <string name="duration_hours_minutes">%1$d sa %2$d dk</string>
     <string name="note_cd">Not: %1$s</string>
-    <string name="note_empty">Not yaz…</string>
+    <string name="note_empty">Boş not</string>
+    <string name="note_handwritten">El yazılı not</string>
+    <string name="note_move">Notu taşı</string>
+    <string name="note_write_text">Yazı yaz</string>
     <string name="note_edit">Notu düzenle</string>
     <string name="note_delete">Notu sil</string>
     <string name="note_resize">Notu boyutlandır</string>
@@ -209,7 +212,7 @@
     <string name="note_save">Kaydet</string>
     <string name="notes_heading">Notlar</string>
     <string name="notes_on_page_none">Bu sayfada not yok.</string>
-    <string name="notes_help">Notu sürükleyerek taşı, köşesinden büyüt; dokununca seçilir, tekrar dokununca yazarsın.</string>
+    <string name="notes_help">Not boş eklenir: kalemle üstüne yaz ya da “Aa” ile yazı ekle. Seçili notu ✥ ile taşı, köşesinden büyüt. El aracıyla notu sürükleyebilir, dokunarak seçebilirsin.</string>
     <string name="annotation_two_finger_hint">Kaydırmak ve yakınlaştırmak için iki parmak kullan.</string>
 
     <!-- Answer key -->

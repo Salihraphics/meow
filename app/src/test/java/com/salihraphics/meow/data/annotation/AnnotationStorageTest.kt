@@ -209,4 +209,46 @@ class AnnotationStorageTest {
         }
         db.query("SELECT COUNT(*) FROM sticky_notes").use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
     }
+
+    @Test
+    fun inkOnANoteKeepsItsNoteAcrossReopening() = runBlocking {
+        val file = tmp.root.resolve("noteink.db")
+        val first = openDb(file)
+        LocalAnnotationRepository(first.strokes(), scope) { clock }.apply {
+            add(stroke("onNote").copy(noteId = "n1"))
+            add(stroke("onPage"))
+            flush()
+        }
+        first.close()
+        val second = openDb(file)
+        val strokes = LocalAnnotationRepository(second.strokes(), scope) { clock }.strokesOnPage("doc", 0)
+        assertEquals(mapOf("onNote" to "n1", "onPage" to null), strokes.associate { it.id to it.noteId })
+        second.close()
+    }
+
+    @Test
+    fun upgradingFromVersion6KeepsNotesAndStrokes() {
+        val name = "upgrade6.db"
+        migrations.createDatabase(name, 6).apply {
+            execSQL(
+                "INSERT INTO annotation_strokes (id, documentId, pageIndex, tool, color, width, points, createdAt, updatedAt, deletedAt) " +
+                    "VALUES ('s1', 'doc', 3, 'HIGHLIGHTER', 1728053248, 0.02, x'0000803E0000003F', 1, 1, NULL)",
+            )
+            execSQL(
+                "INSERT INTO sticky_notes (id, documentId, pageIndex, x, y, width, height, text, color, createdAt, updatedAt, deletedAt) " +
+                    "VALUES ('n1', 'doc', 3, 0.1, 0.2, 0.3, 0.16, 'Türev', -6528, 1, 1, NULL)",
+            )
+            close()
+        }
+        val db = migrations.runMigrationsAndValidate(name, 7, true)
+        db.query("SELECT tool, noteId FROM annotation_strokes WHERE id = 's1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("HIGHLIGHTER", it.getString(0))
+            assertTrue(it.isNull(1))
+        }
+        db.query("SELECT text FROM sticky_notes WHERE id = 'n1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Türev", it.getString(0))
+        }
+    }
 }

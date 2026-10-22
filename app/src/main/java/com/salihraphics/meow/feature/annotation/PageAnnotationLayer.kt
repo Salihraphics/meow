@@ -42,10 +42,9 @@ object DrawingInputPolicy {
 /**
  * The strokes of one page, drawn in that page's bounds, plus drawing input while a tool is
  * active. Lives in the page's overlay slot, so it scrolls, zooms and rotates with the page.
- * A gesture belongs to the page it started on and is clamped to it.
+ * A gesture belongs to the page it started on and is clamped to it. Ink written on a note is
+ * the note's, drawn by [PageNotesLayer].
  */
-// `historical` gives the touch samples between frames, which keeps fast strokes smooth.
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun PageAnnotationLayer(
     pageIndex: Int,
@@ -55,9 +54,37 @@ fun PageAnnotationLayer(
 ) {
     val strokes by remember(pageIndex) { session.strokes(pageIndex) }.collectAsState()
     LaunchedEffect(pageIndex) { session.load(pageIndex) }
-    val latestStrokes by rememberUpdatedState(strokes)
+    InkCanvas(
+        strokes = strokes?.filter { it.noteId == null },
+        tools = tools,
+        onDraw = { points, tool -> session.addStroke(pageIndex, points, tool) },
+        onErase = { ids -> session.erase(pageIndex, ids) },
+        modifier = modifier,
+    )
+}
 
-    // The stroke being drawn right now, in page fractions.
+/**
+ * Ink in a box (a page, or a note): [strokes] in fractions of the box, drawn scaled to it, and
+ * pen, highlighter and eraser input while one of them is selected. Null [strokes] (not loaded
+ * yet) take no input. Line widths are fractions of the box's width times [widthScale] (a note is
+ * narrower than its page, and its pen should look as thick as on the page).
+ */
+// `historical` gives the touch samples between frames, which keeps fast strokes smooth.
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun InkCanvas(
+    strokes: List<Stroke>?,
+    tools: AnnotationToolState,
+    onDraw: (FloatArray, AnnotationTool) -> Unit,
+    onErase: (Set<String>) -> Unit,
+    modifier: Modifier = Modifier,
+    widthScale: Float = 1f,
+) {
+    val latestStrokes by rememberUpdatedState(strokes)
+    val latestOnDraw by rememberUpdatedState(onDraw)
+    val latestOnErase by rememberUpdatedState(onErase)
+
+    // The stroke being drawn right now, in fractions of the box.
     val inProgress = remember { mutableStateListOf<Float>() }
     var erasing by remember { mutableStateOf(emptySet<String>()) }
     var eraserAt by remember { mutableStateOf<Offset?>(null) }
@@ -114,8 +141,8 @@ fun PageAnnotationLayer(
 
                 when (tool) {
                     AnnotationTool.PEN, AnnotationTool.HIGHLIGHTER ->
-                        if (!cancelled && inProgress.isNotEmpty()) session.addStroke(pageIndex, inProgress.toFloatArray(), tool)
-                    AnnotationTool.ERASER -> if (erasing.isNotEmpty()) session.erase(pageIndex, erasing)
+                        if (!cancelled && inProgress.isNotEmpty()) latestOnDraw(inProgress.toFloatArray(), tool)
+                    AnnotationTool.ERASER -> if (erasing.isNotEmpty()) latestOnErase(erasing)
                 }
                 inProgress.clear()
                 erasing = emptySet()
@@ -137,7 +164,9 @@ fun PageAnnotationLayer(
         strokes?.sortedBy { if (it.tool == StrokeTool.HIGHLIGHTER) 0 else 1 }?.forEach {
             if (it.id !in erasing) drawStroke(it.points, Color(it.color), it.width, highlight = it.tool == StrokeTool.HIGHLIGHTER)
         }
-        if (inProgress.isNotEmpty()) drawStroke(inProgress.toFloatArray(), Color(style.color), style.width, highlight = tool == AnnotationTool.HIGHLIGHTER)
+        if (inProgress.isNotEmpty()) {
+            drawStroke(inProgress.toFloatArray(), Color(style.color), style.width * widthScale, highlight = tool == AnnotationTool.HIGHLIGHTER)
+        }
         eraserAt?.let {
             drawCircle(Color(0x33000000), eraserRadius, it)
             drawCircle(Color(0x99000000), eraserRadius, it, style = DrawStroke(1.dp.toPx()))

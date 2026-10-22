@@ -177,6 +177,7 @@ class AnnotationReopenEndToEndTest {
         }
         rule.waitForIdle()
         tap("Not ekle")
+        tap("Yazı yaz")
         rule.onNode(hasSetTextAction()).performTextInput("Limit tekrarı")
         rule.onNode(hasText("Kaydet")).performClick()
         rule.waitForIdle()

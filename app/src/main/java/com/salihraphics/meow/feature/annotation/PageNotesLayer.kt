@@ -41,38 +41,54 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.salihraphics.meow.R
+import com.salihraphics.meow.core.designsystem.icon.MeowIcons
 import com.salihraphics.meow.domain.model.StickyNote
+import com.salihraphics.meow.domain.model.Stroke
 import com.salihraphics.meow.feature.viewer.turned
 import kotlin.math.roundToInt
 
 /**
  * The Post-it notes of one page, above its ink. A note takes every touch that lands on it, so
- * dragging a note never draws underneath it. Tap selects (handles appear), a tap on a selected
- * note edits its text, dragging moves it, the corner handle resizes it. Positions are page
- * fractions; the text is turned back upright when the page is turned.
+ * nothing is ever drawn on the page underneath it. A new note is empty: with the pen or
+ * highlighter you write on the note itself (the ink is the note's and moves and resizes with
+ * it), and "Yazı yaz" types text on it. With the hand tool, tap selects, a tap on a selected
+ * note edits its text and dragging moves it. A selected note has handles to move, resize,
+ * type and delete, whatever the tool. Positions are page fractions; the text is turned back
+ * upright when the page is turned.
  */
 @Composable
-fun PageNotesLayer(pageIndex: Int, session: AnnotationSession, rotation: Int, modifier: Modifier = Modifier) {
+fun PageNotesLayer(pageIndex: Int, session: AnnotationSession, rotation: Int, tools: AnnotationToolState, modifier: Modifier = Modifier) {
     val notes by remember(pageIndex) { session.notes(pageIndex) }.collectAsState()
+    val strokes by remember(pageIndex) { session.strokes(pageIndex) }.collectAsState()
     val selected by session.selectedNote.collectAsState()
     val list = notes ?: return
     BoxWithConstraints(modifier.fillMaxSize()) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         if (w <= 0f || h <= 0f) return@BoxWithConstraints
+        val ink = strokes?.filter { it.noteId != null }?.groupBy { it.noteId }
         list.forEach { note ->
-            key(note.id) { NoteView(note, w, h, selected == note.id, rotation, session) }
+            key(note.id) { NoteView(note, ink?.get(note.id).orEmpty().takeIf { strokes != null }, w, h, selected == note.id, rotation, tools, session) }
         }
     }
 }
 
 @Composable
-private fun NoteView(note: StickyNote, pageW: Float, pageH: Float, isSelected: Boolean, rotation: Int, session: AnnotationSession) {
+private fun NoteView(
+    note: StickyNote,
+    ink: List<Stroke>?,
+    pageW: Float,
+    pageH: Float,
+    isSelected: Boolean,
+    rotation: Int,
+    tools: AnnotationToolState,
+    session: AnnotationSession,
+) {
     val density = LocalDensity.current
     // Gesture handlers outlive recompositions, so they read everything through state.
     val latest by rememberUpdatedState(note)
@@ -103,7 +119,10 @@ private fun NoteView(note: StickyNote, pageW: Float, pageH: Float, isSelected: B
     val top = shown.top
     val width = shown.width
     val height = shown.height
-    val label = stringResource(R.string.note_cd, note.text.ifBlank { stringResource(R.string.note_empty) })
+    val label = stringResource(
+        R.string.note_cd,
+        note.text.ifBlank { stringResource(if (ink.isNullOrEmpty()) R.string.note_empty else R.string.note_handwritten) },
+    )
     val editLabel = stringResource(R.string.note_edit)
 
     Box(
@@ -117,21 +136,29 @@ private fun NoteView(note: StickyNote, pageW: Float, pageH: Float, isSelected: B
                 .shadow(3.dp, RoundedCornerShape(2.dp))
                 .background(Color(note.color), RoundedCornerShape(2.dp))
                 .border(if (isSelected) 2.dp else 0.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(2.dp))
-                .pointerInput(note.id) {
-                    detectTapGestures(onTap = {
-                        if (session.selectedNote.value == latest.id) session.editNote(latest) else session.selectNote(latest.id)
-                    })
-                }
-                .pointerInput(note.id) {
-                    detectDragGestures(
-                        onDragStart = { session.selectNote(latest.id) },
-                        onDragEnd = { commit() },
-                        onDragCancel = { commit() },
-                    ) { change, amount ->
-                        change.consume()
-                        move += amount
-                    }
-                }
+                .then(
+                    // With a drawing tool the note is written on (below); with the hand it moves.
+                    if (tools.tool != null) {
+                        Modifier
+                    } else {
+                        Modifier
+                            .pointerInput(note.id) {
+                                detectTapGestures(onTap = {
+                                    if (session.selectedNote.value == latest.id) session.editNote(latest) else session.selectNote(latest.id)
+                                })
+                            }
+                            .pointerInput(note.id) {
+                                detectDragGestures(
+                                    onDragStart = { session.selectNote(latest.id) },
+                                    onDragEnd = { commit() },
+                                    onDragCancel = { commit() },
+                                ) { change, amount ->
+                                    change.consume()
+                                    move += amount
+                                }
+                            }
+                    },
+                )
                 .semantics {
                     contentDescription = label
                     role = Role.Button
@@ -142,14 +169,51 @@ private fun NoteView(note: StickyNote, pageW: Float, pageH: Float, isSelected: B
             // Upright on screen however the page is turned.
             Box(Modifier.fillMaxSize().turned(-rotation).padding(with(density) { (pageW * 0.008f).toDp() })) {
                 val size = with(density) { (pageW * 0.022f).toSp() }.value.coerceAtLeast(6f).sp
-                if (note.text.isBlank()) {
-                    Text(stringResource(R.string.note_empty), fontSize = size, color = Color(0x99000000), fontStyle = FontStyle.Italic)
-                } else {
-                    Text(note.text, fontSize = size, lineHeight = size * 1.2f, color = Color(0xFF2B2600))
-                }
+                if (note.text.isNotBlank()) Text(note.text, fontSize = size, lineHeight = size * 1.2f, color = Color(0xFF2B2600))
             }
+            // Handwriting on the note, in the note's own fractions: it moves and resizes with it.
+            InkCanvas(
+                strokes = ink,
+                tools = tools,
+                onDraw = { points, tool -> session.addStroke(note.pageIndex, points, tool, latest.id, widthScale = page.width / placed().width) },
+                onErase = { ids -> session.erase(note.pageIndex, ids) },
+                widthScale = pageW / width,
+            )
         }
         if (isSelected) {
+            val moveLabel = stringResource(R.string.note_move)
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .offset((-12).dp, (-12).dp)
+                    .size(36.dp)
+                    .pointerInput(note.id) {
+                        detectDragGestures(onDragEnd = { commit() }, onDragCancel = { commit() }) { change, amount ->
+                            change.consume()
+                            move += amount
+                        }
+                    }
+                    .semantics { contentDescription = moveLabel },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.size(26.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(MeowIcons.Move, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
+                }
+            }
+            val writeLabel = stringResource(R.string.note_write_text)
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .offset((-12).dp, 12.dp)
+                    .size(36.dp)
+                    .pointerInput(note.id) { detectTapGestures(onTap = { session.editNote(latest) }) }
+                    .semantics { contentDescription = writeLabel; role = Role.Button; onClick { session.editNote(latest); true } },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.size(26.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("Aa", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
             val deleteLabel = stringResource(R.string.note_delete)
             Box(
                 Modifier

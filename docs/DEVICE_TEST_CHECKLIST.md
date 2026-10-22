@@ -77,9 +77,12 @@ keys must still be there after updating.
 - [ ] Draw and highlight on a turned page, then reset the turn: the marks are where you made them.
 - [ ] Highlighter: yellow and green, three widths; the text stays readable under it. The eraser
       removes it; undo/redo work. Highlighting an option never records an answer.
-- [ ] Notes: "Not ekle", type, "Kaydet". Drag it, resize it from the corner, tap it twice to edit,
-      × to delete, "Geri al" to bring it back. With the pen selected, dragging on a note moves it
-      and never draws under it. Reopen the PDF: notes in the same place with the same text.
+- [ ] Notes: "Not ekle" places an empty note straight away (no dialog). With the pen (or a
+      stylus) write on it: the writing stays on the note. Move it with ✥ and resize it from the
+      corner: the writing moves and scales with it. "Aa" adds typed text on the same note.
+      The eraser on the note erases its writing; × deletes the note; "Geri al" brings it back.
+- [ ] Writing on a note never draws on the page under it and never records an answer, even over
+      an option. Reopen the PDF: notes in the same place with the same writing and text.
 - [ ] With a stylus: pen and highlighter draw; a palm resting on the screen (note what happens).
 - [ ] Timer: Başlat, Duraklat, Devam et, Sıfırla; − / + change the length (25 by default).
       The countdown keeps correct time with the screen off and with the app in the background

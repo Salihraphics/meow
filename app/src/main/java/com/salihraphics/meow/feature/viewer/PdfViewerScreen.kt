@@ -280,7 +280,7 @@ private fun ReadyViewer(
                 onTap = { session.selectNote(null) },
                 pageOverlay = { page ->
                     PageAnnotationLayer(page, session, tools)
-                    PageNotesLayer(page, session, rotation)
+                    PageNotesLayer(page, session, rotation, tools)
                 },
             )
             if (sidePanel) {

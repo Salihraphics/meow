@@ -77,12 +77,18 @@ strokes with tool `HIGHLIGHTER`; erasing, undo and redo work as for the pen. Hig
 checked as answer marks; only pen strokes are.
 
 **Post-it notes** (`StickyNote`, table `sticky_notes`, database v6): position and size are
-fractions of the unturned page, text, colour, timestamps and a tombstone. "Not ekle" puts a note
-on the current page and opens it for typing. A note sits above the ink and takes every touch on
-it, so dragging it never draws underneath: tap selects it (move, resize and delete handles), tap
-again edits the text, drag moves it, the corner handle resizes it. Its text is turned back
-upright when the page is turned. Adding and deleting notes are undoable; moves and edits save at
-once. A page's notes load with its strokes; a note added before that finishes is kept.
+fractions of the unturned page, text, colour, timestamps and a tombstone. "Not ekle" places an
+empty note on the current page, selected, without asking anything. On it you can:
+- write by hand: with the pen or highlighter, strokes on a note are the note's (stored as strokes
+  with `noteId`, database v7, points in fractions of the note), so they move and resize with it.
+  The eraser on a note erases its writing; undo/redo work. Note ink is never an answer mark.
+- type: "Aa" (or tapping a selected note with the hand tool) opens the text; text and
+  handwriting can be on the same note.
+A note sits above the page ink and takes every touch on it, so nothing is drawn on the page
+underneath. A selected note has handles to move (✥), resize (corner), type (Aa) and delete (×),
+whatever the tool; with the hand tool the note can also be dragged directly. Its text is turned
+back upright when the page is turned. Adding and deleting notes are undoable; moves and edits
+save at once. A page's notes load with its strokes; a note added before that finishes is kept.
 
 **Next for annotation**: partial (pixel) erasing, pressure-sensitive width, stylus-only mode.
 

@@ -13,14 +13,17 @@ data class Stroke(
     val color: Int,
     /** Line width as a fraction of the page width. */
     val width: Float,
-    /** x0, y0, x1, y1, … as page fractions. */
+    /** x0, y0, x1, y1, … as page fractions, or as fractions of the note for [noteId]'s ink. */
     val points: FloatArray,
+    /** Set when the stroke was written on a sticky note: it moves and resizes with the note. */
+    val noteId: String? = null,
 ) {
     val pointCount: Int get() = points.size / 2
 
     override fun equals(other: Any?): Boolean =
         other is Stroke && other.id == id && other.documentId == documentId && other.pageIndex == pageIndex &&
-            other.tool == tool && other.color == color && other.width == width && other.points.contentEquals(points)
+            other.tool == tool && other.color == color && other.width == width && other.points.contentEquals(points) &&
+            other.noteId == noteId
 
     override fun hashCode(): Int = id.hashCode()
 }

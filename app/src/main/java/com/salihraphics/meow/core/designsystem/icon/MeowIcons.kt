@@ -77,6 +77,11 @@ object MeowIcons {
         )
     }
 
+    /** Material "open_with": four arrows, for moving a note. */
+    val Move: ImageVector by lazy {
+        icon("Move", "M10,9h4V6h3l-5,-5 -5,5h3v3zM9,10H6V7l-5,5 5,5v-3h3v-4zM23,12l-5,-5v3h-3v4h3v3l5,-5zM14,15h-4v3H7l5,5 5,-5h-3v-3z")
+    }
+
     val Pause: ImageVector by lazy { icon("Pause", "M6,19h4V5H6v14zM14,5v14h4V5h-4z") }
 
     private fun icon(name: String, pathData: String) =

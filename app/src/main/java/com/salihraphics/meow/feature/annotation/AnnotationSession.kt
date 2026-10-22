@@ -122,21 +122,26 @@ class AnnotationSession(
         _tools.update { it.copy(highlightWidthIndex = index.coerceIn(0, AnnotationToolState.HIGHLIGHT_WIDTHS.lastIndex)) }
 
     /**
-     * A finished line drawn with the pen or the highlighter; [points] are page fractions. Only
-     * pen strokes are checked as answer marks; highlighting never records an answer.
+     * A finished line drawn with the pen or the highlighter; [points] are page fractions, or
+     * fractions of the note for ink written on note [noteId] (its width then scaled by
+     * [widthScale], the page's width over the note's). Only pen strokes on the page are checked
+     * as answer marks; highlighting and writing on notes never record an answer.
      */
-    fun addStroke(pageIndex: Int, points: FloatArray, tool: AnnotationTool = AnnotationTool.PEN) {
+    fun addStroke(pageIndex: Int, points: FloatArray, tool: AnnotationTool = AnnotationTool.PEN, noteId: String? = null, widthScale: Float = 1f) {
         if (points.size < 2) return
         val style = _tools.value.styleFor(tool) ?: return
         val kind = if (tool == AnnotationTool.HIGHLIGHTER) StrokeTool.HIGHLIGHTER else StrokeTool.PEN
-        val stroke = Stroke(newId(), documentId, pageIndex, kind, style.color, style.width, points)
+        val stroke = Stroke(newId(), documentId, pageIndex, kind, style.color, style.width * widthScale, points, noteId)
         page(pageIndex).update { it.orEmpty() + stroke }
         repository.add(stroke)
         record(AnnotationEdit.Added(stroke))
-        if (kind == StrokeTool.PEN) onStrokeAdded(stroke)
+        if (kind == StrokeTool.PEN && noteId == null) onStrokeAdded(stroke)
     }
 
-    /** A new note on [pageIndex], placed so several new ones don't stack exactly; selected and opened for typing. */
+    /**
+     * A new, empty note on [pageIndex], placed so several new ones don't stack exactly, and
+     * selected. Write on it with the pen, or type on it ("Yazı yaz").
+     */
     fun addNote(pageIndex: Int): StickyNote {
         val existing = notePage(pageIndex).value.orEmpty().size
         val offset = (existing % 6) * 0.04f
@@ -148,7 +153,6 @@ class AnnotationSession(
         repository.putNote(note)
         record(AnnotationEdit.NoteAdded(note))
         _selectedNote.value = note.id
-        _editingNote.value = note
         return note
     }
 

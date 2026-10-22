@@ -156,6 +156,9 @@ class LibraryViewerScreenshotTest {
             add(Stroke("h2", "1", 0, StrokeTool.HIGHLIGHTER, AnnotationToolState.HIGHLIGHT_COLORS[1], 0.022f, floatArrayOf(0.1f, 0.24f, 0.7f, 0.24f)))
             add(Stroke("a", "1", 0, StrokeTool.PEN, 0xFFE0383E.toInt(), 0.006f, floatArrayOf(0.15f, 0.42f, 0.3f, 0.4f, 0.45f, 0.43f, 0.6f, 0.41f)))
             putNote(StickyNote("n1", "1", 0, 0.55f, 0.55f, 0.32f, 0.16f, "Türev kurallarını tekrar et!", StickyNote.YELLOW))
+            // Handwriting on the note: a check mark and an underline, in the note's own fractions.
+            add(Stroke("n1ink", "1", 0, StrokeTool.PEN, 0xFF1E5EFF.toInt(), 0.02f, floatArrayOf(0.1f, 0.6f, 0.2f, 0.8f, 0.4f, 0.45f), "n1"))
+            add(Stroke("n1ink2", "1", 0, StrokeTool.PEN, 0xFFE0383E.toInt(), 0.015f, floatArrayOf(0.5f, 0.75f, 0.7f, 0.72f, 0.9f, 0.76f), "n1"))
         }
         val session = AnnotationSession("1", repo, CoroutineScope(Dispatchers.Unconfined)).apply {
             selectTool(tool)
