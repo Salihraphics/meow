@@ -14,6 +14,10 @@ data class PdfDocument(
     val lastPageIndex: Int,
     /** How the student turned the pages in the viewer, degrees clockwise. */
     val viewRotation: Int = 0,
+    /** The student's folder for it; null is "Klasörsüz". */
+    val folderId: String? = null,
+    /** Pinned to the top of the library and the home screen. */
+    val pinned: Boolean = false,
 ) {
     companion object {
         const val MAX_NAME_LENGTH = 120
@@ -30,6 +34,23 @@ data class PdfDocument(
         fun nameFromFileName(fileName: String?): String? =
             sanitizeName(fileName?.replace(Regex("(?i)\\.pdf$"), ""))
     }
+}
+
+/** A folder in the library. Folders only group documents; their PDFs stay where they are. */
+data class LibraryFolder(val id: String, val name: String) {
+    companion object {
+        const val MAX_NAME_LENGTH = 40
+
+        fun sanitizeName(raw: String?): String? =
+            raw?.trim()?.replace(Regex("\\s+"), " ")?.take(MAX_NAME_LENGTH)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+}
+
+sealed interface FolderResult {
+    data class Done(val folder: LibraryFolder) : FolderResult
+    data object BlankName : FolderResult
+    data object DuplicateName : FolderResult
+    data object NotFound : FolderResult
 }
 
 enum class PdfImportError {

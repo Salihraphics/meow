@@ -1,4 +1,4 @@
-# Device test checklist: answer marking and keys
+# Device test checklist: answer marking, keys, dashboard and library
 
 These flows have JVM tests (Robolectric), but Android's PDF renderer, ML Kit OCR, the pen on a
 real screen and real books can only be checked on a device. Use a book with an answer key (the
@@ -130,9 +130,56 @@ keys must still be there after updating.
 - [ ] Larger text (Android font size at maximum): labels wrap instead of being cut off in the
       panel, dialogs and home.
 
+## 6a. Home dashboard
+- [ ] Fresh install: Home shows "İlk PDF'ini ekle", "Sınav hedefi" and "Henüz kayıtlı çalışma
+      yok"; no numbers that you didn't create.
+- [ ] "PDF ekle" (card or quick action) opens the library and the system picker straight away;
+      backing out of the picker leaves you in the library.
+- [ ] After reading a PDF to some page and going back: "Çalışmaya devam et" shows that PDF and
+      "Sayfa N / M"; "Devam et" opens it on that page.
+- [ ] Pin a PDF in the library: it appears under "Sabitlenenler" on Home. Open two others: they
+      appear under "Son açılanlar" with folder and "Bugün".
+- [ ] Write a typed note and a pen-only note: both appear under "Notlarım" ("El yazısı not");
+      tapping one opens that PDF at the note's page. An empty note you never wrote on is not
+      listed.
+- [ ] Run the timer to the end once and reset one early: "Bu hafta" shows the time and
+      "Oturum 2 · 1 tamamlandı". Check a test: "Kontrol edilen test 1" with its counts.
+- [ ] Tablet landscape and portrait, phone portrait and landscape: nothing clipped, countdown
+      in the top corner on tablets.
+
+## 6b. Exam countdown
+- [ ] "Hedef belirle" → YKS → Kaydet: TYT is counted down in the 2×2 grid, the seconds tick,
+      "Tahmini tarih" is shown, AYT/YDT is listed below.
+- [ ] Change TYT's date and time ("Tarihi değiştir"): the chip turns to "Senin girdiğin tarih";
+      the day picked is the day shown (check once with the phone in a time zone west of UTC).
+      "Tahmine dön" restores 19 Haziran 2027 10:15.
+- [ ] Switch to LGS, then "Hedef yok": the card goes back to "Sınav hedefi". The same dialog is in
+      Ayarlar → "Sınav hedefi".
+- [ ] Turn "Geri sayımı ana sayfada göster" off: Home shows "Geri sayım kapalı · Aç".
+- [ ] Set a date today a few minutes ahead: "Sınav bugün" and the countdown reaches 00 at the
+      start time, then shows the completed state (YKS: moves on to AYT/YDT). Never a negative
+      number.
+- [ ] Leave the app on Home for a few minutes, switch to another app and back, lock and unlock:
+      the countdown is right again at once (it never drifts).
+- [ ] Change the phone's time zone or date: the countdown follows the new clock.
+
+## 6c. Library organisation
+- [ ] Create folders, including one with the same name in other letter case ("fizik" when
+      "Fizik" exists): refused with "Bu adda bir klasör zaten var."
+- [ ] Move a PDF into a folder and back to "Klasörsüz" from its ⋮ menu; "Yeni klasör" inside
+      the move dialog creates and moves in one step.
+- [ ] Rename a folder; delete a folder with PDFs: the dialog says they move to Klasörsüz;
+      "Vazgeç" changes nothing; deleting keeps every PDF, with its drawings and answers.
+- [ ] Search "ozet" finds "ÖZET…"; sort by Ad / Eklenme / Son açılan, close and reopen the app:
+      the sort is remembered. Pinned PDFs stay on top.
+- [ ] Empty folder, no search results, no pinned: each shows its own short message.
+
 ## 7. Your data after updating
 - [ ] Update over the previous version (`adb install -r`, do not uninstall): the library, last
       pages, drawings, marked answers, confirmed keys and corrections are all still there.
+- [ ] After this update every PDF is in "Klasörsüz", nothing is pinned, sticky notes and
+      handwriting on them are intact, and no PDF was duplicated (Android app info → storage roughly
+      unchanged).
 
 ## 8. Nothing else broke
 - [ ] Reading, scrolling, zooming, go-to-page, and last-read page work as before.

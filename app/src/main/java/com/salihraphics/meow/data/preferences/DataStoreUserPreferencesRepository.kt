@@ -1,5 +1,10 @@
 package com.salihraphics.meow.data.preferences
 
+import com.salihraphics.meow.domain.model.LibrarySort
+import com.salihraphics.meow.domain.model.ExamSession
+import com.salihraphics.meow.domain.model.ExamGoalType
+import com.salihraphics.meow.domain.model.ExamGoal
+import com.salihraphics.meow.domain.model.ExamDate
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
@@ -42,6 +47,11 @@ class DataStoreUserPreferencesRepository(
         val mascotAnimations = booleanPreferencesKey("mascot_animations")
         val themeMode = stringPreferencesKey("theme_mode")
         val immediateFeedback = booleanPreferencesKey("immediate_feedback")
+        val examGoalType = stringPreferencesKey("exam_goal_type")
+        val examGoalEnabled = booleanPreferencesKey("exam_goal_enabled")
+        /** "TYT=2027-06-19T10:15": only dates the student entered. */
+        val examGoalDates = stringSetPreferencesKey("exam_goal_dates")
+        val librarySort = stringPreferencesKey("library_sort")
     }
 
     override val preferences: Flow<UserPreferences> = dataStore.data
@@ -71,6 +81,25 @@ class DataStoreUserPreferencesRepository(
         dataStore.edit { it[Keys.immediateFeedback] = enabled }
     }
 
+    override suspend fun setExamGoal(goal: ExamGoal?) {
+        dataStore.edit {
+            if (goal == null) {
+                it.remove(Keys.examGoalType)
+                it.remove(Keys.examGoalEnabled)
+                it.remove(Keys.examGoalDates)
+            } else {
+                it[Keys.examGoalType] = goal.type.name
+                it[Keys.examGoalEnabled] = goal.enabled
+                val dates = goal.dates.filterKeys { s -> s.goal == goal.type }.map { (s, d) -> "${s.name}=${d.encode()}" }.toSet()
+                if (dates.isEmpty()) it.remove(Keys.examGoalDates) else it[Keys.examGoalDates] = dates
+            }
+        }
+    }
+
+    override suspend fun setLibrarySort(sort: LibrarySort) {
+        dataStore.edit { it[Keys.librarySort] = sort.name }
+    }
+
     override suspend fun restartOnboarding() {
         dataStore.edit { it[Keys.onboardingCompleted] = false }
     }
@@ -85,7 +114,20 @@ class DataStoreUserPreferencesRepository(
         mascotAnimationsEnabled = this[Keys.mascotAnimations] ?: true,
         themeMode = enumOrNull<ThemeMode>(this[Keys.themeMode]) ?: ThemeMode.SYSTEM,
         immediateFeedback = this[Keys.immediateFeedback] ?: false,
+        examGoal = readExamGoal(),
+        librarySort = enumOrNull<LibrarySort>(this[Keys.librarySort]) ?: LibrarySort.RECENT,
     )
+
+    private fun Preferences.readExamGoal(): ExamGoal? {
+        val type = enumOrNull<ExamGoalType>(this[Keys.examGoalType]) ?: return null
+        // A date that can't be read is dropped, and that session falls back to its default.
+        val dates = this[Keys.examGoalDates].orEmpty().mapNotNull { entry ->
+            val (name, value) = entry.split('=', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
+            val session = enumOrNull<ExamSession>(name)?.takeIf { it.goal == type } ?: return@mapNotNull null
+            ExamDate.decode(value)?.let { session to it }
+        }.toMap()
+        return ExamGoal(type, dates, this[Keys.examGoalEnabled] ?: true)
+    }
 
     private fun Preferences.readProfile() = StudyProfile(
         exam = enumOrNull<ExamType>(this[Keys.exam]),

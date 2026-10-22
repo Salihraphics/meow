@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface StrokeDao {
@@ -45,4 +46,28 @@ interface StrokeDao {
 
     @Query("UPDATE sticky_notes SET deletedAt = :now, updatedAt = :now WHERE documentId = :documentId AND deletedAt IS NULL")
     suspend fun markDocumentNotesDeleted(documentId: String, now: Long)
+
+    /**
+     * The newest notes across live documents, for the dashboard: ones with text or with ink on
+     * them (an empty note placed and never used is left out). Edited = the later of the note's
+     * own change and the newest ink on it.
+     */
+    @Query(
+        "SELECT n.id, n.documentId, n.pageIndex, n.text, " +
+            "(SELECT COUNT(*) FROM annotation_strokes s WHERE s.noteId = n.id AND s.deletedAt IS NULL) AS inkCount, " +
+            "MAX(n.updatedAt, IFNULL((SELECT MAX(s.updatedAt) FROM annotation_strokes s WHERE s.noteId = n.id AND s.deletedAt IS NULL), 0)) AS editedAt " +
+            "FROM sticky_notes n JOIN pdf_documents d ON d.id = n.documentId " +
+            "WHERE n.deletedAt IS NULL AND d.deletedAt IS NULL AND (TRIM(n.text) != '' OR inkCount > 0) " +
+            "ORDER BY editedAt DESC LIMIT :limit",
+    )
+    fun observeRecentNotes(limit: Int): Flow<List<RecentNoteRow>>
 }
+
+data class RecentNoteRow(
+    val id: String,
+    val documentId: String,
+    val pageIndex: Int,
+    val text: String,
+    val inkCount: Int,
+    val editedAt: Long,
+)

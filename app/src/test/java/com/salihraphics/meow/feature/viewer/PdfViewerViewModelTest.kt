@@ -68,6 +68,25 @@ class PdfViewerViewModelTest {
     }
 
     @Test
+    fun aRequestedPageWinsOverTheLastReadPageButNotOverARestoredViewport() = scope.runTest {
+        val repo = FakePdfLibraryRepository(tmp.root).apply { add(sampleDocument(lastPage = 9)) }
+        val fromNote = viewModel(repo, FakeSessionFactory(pages = 24), savedState = SavedStateHandle(mapOf(VIEWER_START_PAGE to 17)))
+        advanceUntilIdle()
+        assertEquals(17, (fromNote.state.value as ViewerUiState.Ready).initialPage)
+        store.clear()
+
+        // -1 is the navigation default: where the student left off.
+        val plain = viewModel(repo, FakeSessionFactory(pages = 24), savedState = SavedStateHandle(mapOf(VIEWER_START_PAGE to -1)))
+        advanceUntilIdle()
+        assertEquals(9, (plain.state.value as ViewerUiState.Ready).initialPage)
+        store.clear()
+
+        val tooFar = viewModel(repo, FakeSessionFactory(pages = 5), savedState = SavedStateHandle(mapOf(VIEWER_START_PAGE to 40)))
+        advanceUntilIdle()
+        assertEquals(4, (tooFar.state.value as ViewerUiState.Ready).initialPage)
+    }
+
+    @Test
     fun lastPageBeyondTheDocumentIsClamped() = scope.runTest {
         val repo = FakePdfLibraryRepository(tmp.root).apply { add(sampleDocument(lastPage = 99)) }
         val vm = viewModel(repo, FakeSessionFactory(pages = 5))

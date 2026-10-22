@@ -1,5 +1,7 @@
 package com.salihraphics.meow.testing
 
+import com.salihraphics.meow.domain.model.LibrarySort
+import com.salihraphics.meow.domain.model.ExamGoal
 import com.salihraphics.meow.data.preferences.UserPreferencesRepository
 import com.salihraphics.meow.domain.model.StudyProfile
 import com.salihraphics.meow.domain.model.ThemeMode
@@ -23,6 +25,10 @@ class FakeUserPreferencesRepository(initial: UserPreferences = UserPreferences()
     override suspend fun setThemeMode(mode: ThemeMode) = current.update { it.copy(themeMode = mode) }
 
     override suspend fun setImmediateFeedback(enabled: Boolean) = current.update { it.copy(immediateFeedback = enabled) }
+
+    override suspend fun setExamGoal(goal: ExamGoal?) = current.update { it.copy(examGoal = goal) }
+
+    override suspend fun setLibrarySort(sort: LibrarySort) = current.update { it.copy(librarySort = sort) }
 
     override suspend fun restartOnboarding() = current.update { it.copy(onboardingCompleted = false) }
 

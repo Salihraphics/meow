@@ -26,6 +26,9 @@ data class PdfDocumentEntity(
     val deletedAt: Long?,
     /** Viewer rotation in degrees clockwise (0, 90, 180, 270); the PDF itself is never changed. */
     @ColumnInfo(defaultValue = "0") val viewRotation: Int = 0,
+    /** The library folder; null (and for every document from before folders) is "Klasörsüz". */
+    @ColumnInfo(defaultValue = "NULL") val folderId: String? = null,
+    @ColumnInfo(defaultValue = "0") val pinned: Boolean = false,
 ) {
     fun toDomain() = PdfDocument(
         id = id,
@@ -37,5 +40,7 @@ data class PdfDocumentEntity(
         lastOpenedAt = lastOpenedAt,
         lastPageIndex = lastPageIndex,
         viewRotation = viewRotation,
+        folderId = folderId,
+        pinned = pinned,
     )
 }

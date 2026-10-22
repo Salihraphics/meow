@@ -32,16 +32,17 @@ import com.salihraphics.meow.data.study.StudyTimerEntity
         StickyNoteEntity::class,
         StudyTimerEntity::class,
         StudySessionEntity::class,
+        LibraryFolderEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
     // v2 adds annotation_strokes; v3 adds answer keys and attempts; v4 adds solving sessions,
     // separate key PDFs and search clues; v5 records where each found answer was read; v6 adds
     // sticky notes, the viewer rotation per PDF and the study timer; v7 lets ink be written on a
-    // note. Existing data is kept.
+    // note; v8 adds library folders and pinned documents. Existing data is kept.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
-        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8),
     ],
 )
 abstract class MeowDatabase : RoomDatabase() {

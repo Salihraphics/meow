@@ -4,6 +4,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.salihraphics.meow.feature.common.labelRes
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.createSavedStateHandle
@@ -16,9 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.salihraphics.meow.analysis.layout.PdfPageLayoutSource
 import com.salihraphics.meow.analysis.text.MlKitPageOcr
 import com.salihraphics.meow.feature.answerkey.AnswerKeyRoute
@@ -28,10 +28,13 @@ import com.salihraphics.meow.feature.library.LibraryViewModel
 import com.salihraphics.meow.feature.library.fileThumbnailLoader
 import com.salihraphics.meow.feature.viewer.PdfViewerRoute
 import com.salihraphics.meow.feature.viewer.PdfViewerViewModel
+import com.salihraphics.meow.feature.viewer.VIEWER_START_PAGE
 import kotlinx.coroutines.flow.map
 import com.salihraphics.meow.MeowApplication
 import com.salihraphics.meow.domain.model.UserPreferences
-import com.salihraphics.meow.feature.home.HomeScreen
+import com.salihraphics.meow.feature.home.HomeActions
+import com.salihraphics.meow.feature.home.HomeRoute
+import com.salihraphics.meow.feature.home.HomeViewModel
 import com.salihraphics.meow.feature.onboarding.OnboardingRoute
 import com.salihraphics.meow.feature.onboarding.OnboardingViewModel
 import com.salihraphics.meow.feature.settings.SettingsRoute
@@ -41,11 +44,14 @@ object MeowDestinations {
     const val ONBOARDING = "onboarding"
     const val HOME = "home"
     const val SETTINGS = "settings"
-    const val LIBRARY = "library"
-    const val VIEWER = "viewer/{documentId}"
+    const val LIBRARY = "library?import={import}"
+    const val VIEWER = "viewer/{documentId}?page={page}"
     const val ANSWER_KEY = "answerkey/{documentId}"
     fun answerKey(documentId: String) = "answerkey/$documentId"
-    fun viewer(documentId: String) = "viewer/$documentId"
+    fun viewer(documentId: String, page: Int? = null) = "viewer/$documentId" + (page?.let { "?page=$it" } ?: "")
+
+    /** [import] true opens the PDF picker right away (Home's "PDF ekle"). */
+    fun library(import: Boolean = false) = "library?import=$import"
 }
 
 @Composable
@@ -72,21 +78,48 @@ fun MeowNavHost(
             OnboardingRoute(vm, onCompleted = { navController.replaceAllWith(MeowDestinations.HOME) })
         }
         composable(MeowDestinations.HOME) {
-            val libraryCount by remember { container.pdfLibraryRepository.documents.map { it.size } }
-                .collectAsStateWithLifecycle(initialValue = null)
-            HomeScreen(
+            val library = container.pdfLibraryRepository
+            val vm: HomeViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        HomeViewModel(
+                            documents = library.documents,
+                            folders = library.folders,
+                            dashboard = container.dashboardRepository,
+                            examGoal = repository.preferences.map { it.examGoal },
+                            saveExamGoal = repository::setExamGoal,
+                        )
+                    }
+                },
+            )
+            HomeRoute(
+                viewModel = vm,
                 profile = preferences.profile,
-                onOpenSettings = { navController.navigate(MeowDestinations.SETTINGS) { launchSingleTop = true } },
-                onOpenLibrary = { navController.navigate(MeowDestinations.LIBRARY) { launchSingleTop = true } },
-                libraryCount = libraryCount,
+                thumbnails = remember { fileThumbnailLoader(library::thumbnailFile) },
+                actions = HomeActions(
+                    onOpenSettings = { navController.navigate(MeowDestinations.SETTINGS) { launchSingleTop = true } },
+                    onOpenLibrary = { navController.navigate(MeowDestinations.library()) { launchSingleTop = true } },
+                    onAddPdf = { navController.navigate(MeowDestinations.library(import = true)) { launchSingleTop = true } },
+                    onOpenDocument = { navController.navigate(MeowDestinations.viewer(it.id)) { launchSingleTop = true } },
+                    onOpenPage = { id, page -> navController.navigate(MeowDestinations.viewer(id, page)) { launchSingleTop = true } },
+                ),
             )
         }
-        composable(MeowDestinations.LIBRARY) {
+        composable(
+            MeowDestinations.LIBRARY,
+            arguments = listOf(navArgument("import") { type = NavType.BoolType; defaultValue = false }),
+        ) { entry ->
             val library = container.pdfLibraryRepository
             val vm: LibraryViewModel = viewModel(
                 factory = viewModelFactory {
                     initializer {
-                        LibraryViewModel(library, container.answerKeyRepository.observeStatuses(container.answerKeyScheduler.progress))
+                        LibraryViewModel(
+                            library,
+                            container.answerKeyRepository.observeStatuses(container.answerKeyScheduler.progress),
+                            sortSetting = repository.preferences.map { it.librarySort },
+                            saveSort = repository::setLibrarySort,
+                            fileExists = { library.pdfFile(it).exists() },
+                        )
                     }
                 },
             )
@@ -96,6 +129,8 @@ fun MeowNavHost(
                 onOpen = { navController.navigate(MeowDestinations.viewer(it.id)) { launchSingleTop = true } },
                 onAnswerKey = { navController.navigate(MeowDestinations.answerKey(it.id)) { launchSingleTop = true } },
                 onBack = { navController.popBackStack() },
+                suggestedFolders = preferences.profile.subjects.sorted().map { stringResource(it.labelRes) },
+                openPickerOnStart = entry.arguments?.getBoolean("import") == true,
             )
         }
         composable(
@@ -139,7 +174,11 @@ fun MeowNavHost(
         }
         composable(
             MeowDestinations.VIEWER,
-            arguments = listOf(navArgument("documentId") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("documentId") { type = NavType.StringType },
+                // Optional: open at this page (a note on the dashboard) instead of where the student left off.
+                navArgument(VIEWER_START_PAGE) { type = NavType.IntType; defaultValue = -1 },
+            ),
         ) { entry ->
             val documentId = requireNotNull(entry.arguments?.getString("documentId"))
             val vm: PdfViewerViewModel = viewModel(

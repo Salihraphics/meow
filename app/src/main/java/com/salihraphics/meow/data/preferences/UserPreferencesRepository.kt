@@ -1,5 +1,7 @@
 package com.salihraphics.meow.data.preferences
 
+import com.salihraphics.meow.domain.model.LibrarySort
+import com.salihraphics.meow.domain.model.ExamGoal
 import com.salihraphics.meow.domain.model.StudyProfile
 import com.salihraphics.meow.domain.model.ThemeMode
 import com.salihraphics.meow.domain.model.UserPreferences
@@ -18,6 +20,11 @@ interface UserPreferencesRepository {
     suspend fun setThemeMode(mode: ThemeMode)
 
     suspend fun setImmediateFeedback(enabled: Boolean)
+
+    /** Saves the exam goal (with any dates the student entered); null forgets it. */
+    suspend fun setExamGoal(goal: ExamGoal?)
+
+    suspend fun setLibrarySort(sort: LibrarySort)
 
     /** Shows onboarding again on next navigation while keeping the saved profile. */
     suspend fun restartOnboarding()

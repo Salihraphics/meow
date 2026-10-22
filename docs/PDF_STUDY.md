@@ -317,6 +317,66 @@ testing ("55 Günde TYT Matematik VDK 2024") was not available here, so its exac
 reproduced; the layouts above are what such books commonly use. See
 [DEVICE_TEST_CHECKLIST.md](DEVICE_TEST_CHECKLIST.md).
 
+## Home dashboard
+
+`feature/home`. Everything shown comes from data MEOW already stores; nothing is estimated or
+sample data.
+
+- **Çalışmaya devam et**: the PDF with the latest `lastOpenedAt`, opened at its saved
+  `lastPageIndex` (the viewer's own restore). With nothing opened yet it offers the newest import
+  ("Okumaya başla"); with an empty library, "İlk PDF'ini ekle".
+- **Sabitlenenler / Son açılanlar**: pinned PDFs, and up to four other recently opened ones with
+  page, folder and "Bugün / Dün / N gün önce" (local calendar days).
+- **Notlarım**: the five newest sticky notes in live PDFs that have text or ink
+  (`StrokeDao.observeRecentNotes`; a note placed and never used is left out). Tapping one opens
+  the viewer at that page through the optional `viewer/{id}?page=N` argument
+  (`VIEWER_START_PAGE`); without it the viewer opens at the last-read page as before, and a
+  viewport restored after rotation/process death still wins.
+- **Bu hafta**: today's and this week's (Monday 00:00 local) study time and sessions from
+  `study_sessions` (the timer's log), and tests checked with "Testi kontrol et" this week
+  (`solving_sessions.checkedAt`). A running, not-yet-ended timer session is not counted until it
+  ends. With nothing recorded it says so.
+- **Hızlı işlemler**: "PDF ekle" opens the library and its picker (`library?import=true`),
+  "Kütüphane", "Sınav sayacı".
+
+## Exam goal and countdown
+
+`domain/model/ExamGoal.kt`, `feature/exam`. YKS (TYT, AYT/YDT) or LGS, chosen from Home or
+Settings and stored in DataStore (`exam_goal_type`, `exam_goal_enabled`, `exam_goal_dates` as
+`SESSION=yyyy-MM-ddTHH:mm`). Optional: with no goal Home shows a small "Sınav hedefi" card.
+
+- Default dates live only in `ExamSession`: TYT 19 Jun 2027 10:15, AYT/YDT 20 Jun 2027 10:15,
+  LGS 13 Jun 2027 09:30. They are MEOW's targets, **not confirmed official dates**, and are
+  labelled "Tahmini tarih" until the student enters their own ("Senin girdiğin tarih").
+  "Tahmine dön" goes back to the default. Start times are editable too.
+- Dates are wall-clock fields read in the device's time zone; the DatePicker's UTC-midnight
+  value is converted with `ExamDate.fromPickerMillis`, so the chosen day never shifts. No
+  java.time (minSdk 24 without desugaring): `Calendar`/`TimeZone` only.
+- The 2×2 grid (GÜN / SAAT / DAKİKA / SANİYE) is recomputed from the target instant and the
+  clock every second (`rememberTickingNow`): the loop runs only while Home is STARTED
+  (`repeatOnLifecycle`) and stops when the card leaves the screen, so nothing leaks and a pause
+  can't drift. Seconds round up, so 00 arrives exactly at the start; values are never negative.
+- YKS shows the next sitting large and the other one below; after TYT starts the focus moves to
+  AYT/YDT ("TYT tamamlandı"). On the day: "Sınav bugün. Başarılar!". After all sittings:
+  "YKS tamamlandı. Emeğine sağlık!" with "Yeni hedef belirle". "Geri sayımı ana sayfada göster"
+  off hides the countdown but keeps the choice.
+- TalkBack reads one sentence without seconds ("TYT için 239 gün 13 saat 6 dakika kaldı").
+
+## Library organisation
+
+`feature/library`, DB v8 (`library_folders`, `pdf_documents.folderId`, `pdf_documents.pinned`;
+AutoMigration 7→8, existing rows become "Klasörsüz", unpinned).
+
+- Folders: create, rename, delete; names are trimmed, max 40 characters, unique ignoring case
+  with Turkish rules. Deleting asks first and moves the folder's PDFs to "Klasörsüz"; no PDF
+  file is ever copied, moved or deleted by organising. With no folders yet, the student's
+  subjects are offered as folders ("Derslerimden klasör oluştur"), never created on their own.
+- Filters: Tümü, Sabitlenenler, Klasörsüz, each folder. Search covers the shown name and the
+  original file name, ignoring case and Turkish letters. Sort: Son açılan, Ada göre (Turkish
+  alphabet), Eklenme tarihi; saved in DataStore (`library_sort`). Pinned PDFs come first.
+- Cards show pages · size, folder, the last page only once opened, and "Dosya bulunamadı" when
+  the app's copy is missing.
+
 ## Next
 
 - Timed solving, per-question time, and the mistake notebook fed by checked sessions.

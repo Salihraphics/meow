@@ -200,4 +200,73 @@ class LocalPdfLibraryRepositoryTest {
         store.clearIncoming()
         assertTrue(incomingLeftovers().isEmpty())
     }
+
+    // ---- Folders and pins --------------------------------------------------------------------
+
+    private suspend fun imported(name: String, content: String) =
+        (repo().import(source.add("$name.pdf", pdfBytes(content)), "") as com.salihraphics.meow.domain.model.PdfImportResult.Imported).document
+
+    @Test
+    fun foldersAreCreatedRenamedAndKeepNamesUnique() = runBlocking {
+        val r = repo()
+        val math = (r.createFolder("  Matematik ") as com.salihraphics.meow.domain.model.FolderResult.Done).folder
+        assertEquals("Matematik", math.name)
+        assertEquals(com.salihraphics.meow.domain.model.FolderResult.DuplicateName, r.createFolder("matematik"))
+        // Turkish casing: "IŞIK" and "ışık" are the same name; "Işık" vs "İşik" are not.
+        r.createFolder("Işık")
+        assertEquals(com.salihraphics.meow.domain.model.FolderResult.DuplicateName, r.createFolder("IŞIK"))
+        assertEquals(com.salihraphics.meow.domain.model.FolderResult.BlankName, r.createFolder("   "))
+        val physics = (r.createFolder("Fizik") as com.salihraphics.meow.domain.model.FolderResult.Done).folder
+        assertEquals(com.salihraphics.meow.domain.model.FolderResult.DuplicateName, r.renameFolder(physics.id, "MATEMATİK".lowercase(java.util.Locale("tr"))))
+        assertEquals(com.salihraphics.meow.domain.model.FolderResult.Done(physics.copy(name = "Fizik 2")), r.renameFolder(physics.id, "Fizik 2"))
+        // Renaming a folder to its own name in other casing is fine.
+        assertTrue(r.renameFolder(math.id, "MATEMATİK") is com.salihraphics.meow.domain.model.FolderResult.Done)
+        assertEquals(listOf("Fizik 2", "Işık", "MATEMATİK"), r.folders.first().map { it.name })
+    }
+
+    @Test
+    fun movingAndPinningNeverTouchesTheFile() = runBlocking {
+        val r = repo()
+        val doc = imported("Deneme", "a")
+        val before = store.pdfFile(doc.id).readBytes()
+        val folder = (r.createFolder("Denemeler") as com.salihraphics.meow.domain.model.FolderResult.Done).folder
+        r.moveToFolder(doc.id, folder.id)
+        r.setPinned(doc.id, true)
+        val moved = r.get(doc.id)!!
+        assertEquals(folder.id, moved.folderId)
+        assertTrue(moved.pinned)
+        assertArrayEquals(before, store.pdfFile(doc.id).readBytes())
+        assertEquals(1, store.pdfFile(doc.id).parentFile!!.listFiles()!!.count { it.extension == "pdf" })
+        r.moveToFolder(doc.id, null)
+        assertNull(r.get(doc.id)!!.folderId)
+        // A folder that no longer exists is not a valid target.
+        r.moveToFolder(doc.id, "gone")
+        assertNull(r.get(doc.id)!!.folderId)
+    }
+
+    @Test
+    fun deletingAFolderMovesItsDocumentsOutAndDeletesNoPdf() = runBlocking {
+        val r = repo()
+        val a = imported("A", "a")
+        val b = imported("B", "b")
+        val folder = (r.createFolder("Kimya") as com.salihraphics.meow.domain.model.FolderResult.Done).folder
+        r.moveToFolder(a.id, folder.id)
+        r.moveToFolder(b.id, folder.id)
+        r.deleteFolder(folder.id)
+        assertTrue(r.folders.first().isEmpty())
+        val docs = r.documents.first()
+        assertEquals(2, docs.size)
+        assertTrue(docs.all { it.folderId == null })
+        assertTrue(store.pdfFile(a.id).exists() && store.pdfFile(b.id).exists())
+        // The name is free again.
+        assertTrue(r.createFolder("Kimya") is com.salihraphics.meow.domain.model.FolderResult.Done)
+    }
+
+    @Test
+    fun deletingAnEmptyFolderIsFine() = runBlocking {
+        val r = repo()
+        val folder = (r.createFolder("Boş") as com.salihraphics.meow.domain.model.FolderResult.Done).folder
+        r.deleteFolder(folder.id)
+        assertTrue(r.folders.first().isEmpty())
+    }
 }

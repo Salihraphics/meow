@@ -1,5 +1,7 @@
 package com.salihraphics.meow.data.library
 
+import com.salihraphics.meow.domain.model.LibraryFolder
+import com.salihraphics.meow.domain.model.FolderResult
 import android.net.Uri
 import com.salihraphics.meow.domain.model.PdfDocument
 import com.salihraphics.meow.domain.model.PdfImportResult
@@ -27,6 +29,22 @@ interface PdfLibraryRepository {
 
     /** How the student turned the pages in the viewer: 0, 90, 180 or 270 degrees clockwise. */
     suspend fun setViewRotation(id: String, degrees: Int)
+
+    /** The student's folders, by name. */
+    val folders: Flow<List<LibraryFolder>>
+
+    /** A new folder; names are unique, ignoring case. */
+    suspend fun createFolder(name: String): FolderResult
+
+    suspend fun renameFolder(id: String, name: String): FolderResult
+
+    /** Removes the folder; its documents move to "Klasörsüz". No PDF is deleted. */
+    suspend fun deleteFolder(id: String)
+
+    /** Puts a document in a folder, or in none ([folderId] null). The file stays where it is. */
+    suspend fun moveToFolder(documentId: String, folderId: String?)
+
+    suspend fun setPinned(documentId: String, pinned: Boolean)
 
     fun pdfFile(id: String): File
 

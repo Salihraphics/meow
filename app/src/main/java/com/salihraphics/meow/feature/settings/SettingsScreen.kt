@@ -64,8 +64,10 @@ import com.salihraphics.meow.feature.common.NameField
 import com.salihraphics.meow.feature.common.SessionOptions
 import com.salihraphics.meow.feature.common.SubjectOptions
 import com.salihraphics.meow.feature.common.labelRes
+import com.salihraphics.meow.feature.exam.ExamGoalDialog
+import com.salihraphics.meow.feature.exam.labelRes as examLabelRes
 
-private enum class Editor { NAME, EXAM, SUBJECTS, LEVEL, SESSION, RESET }
+private enum class Editor { NAME, EXAM, SUBJECTS, LEVEL, SESSION, EXAM_GOAL, RESET }
 
 @Composable
 fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnboarding: () -> Unit) {
@@ -96,6 +98,15 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
                         stringResource(R.string.settings_session),
                         profile.sessionLength?.let { stringResource(R.string.session_minutes, it.minutes) } ?: notSet,
                     ) { editor = Editor.SESSION }
+                    val goal = current.examGoal
+                    ValueRow(
+                        stringResource(R.string.exam_set_title),
+                        when {
+                            goal == null -> stringResource(R.string.exam_setting_value_none)
+                            !goal.enabled -> stringResource(R.string.exam_setting_value_off, stringResource(goal.type.examLabelRes))
+                            else -> stringResource(goal.type.examLabelRes)
+                        },
+                    ) { editor = Editor.EXAM_GOAL }
                 }
                 Section(stringResource(R.string.settings_section_companion)) {
                     SwitchRow(
@@ -217,6 +228,10 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
                 viewModel.setSessionLength(it)
                 editor = null
             }
+        }
+        Editor.EXAM_GOAL -> ExamGoalDialog(current.examGoal, onDismiss = { editor = null }) {
+            viewModel.setExamGoal(it)
+            editor = null
         }
         Editor.RESET -> AlertDialog(
             onDismissRequest = { editor = null },

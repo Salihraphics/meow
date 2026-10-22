@@ -12,6 +12,10 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import com.salihraphics.meow.domain.model.LibrarySort
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -80,5 +84,84 @@ class LibraryViewModelTest {
         vm.rename(sampleDocument(), "  ")
         assertEquals(LibraryMessage.RenameFailed, vm.state.value.message)
         assertEquals("TYT Deneme 1", repo.current.value.single().displayName)
+    }
+
+    @Test
+    fun foldersAreCreatedWithoutDuplicatesAndADocumentCanMoveStraightIn() = runTest(UnconfinedTestDispatcher()) {
+        val repo = FakePdfLibraryRepository(tmp.root).apply { add(sampleDocument()) }
+        val vm = LibraryViewModel(repo)
+        vm.createFolder("Fizik", thenMove = sampleDocument())
+        assertEquals(LibraryMessage.FolderCreated("Fizik"), vm.state.value.message)
+        assertEquals("f1", repo.current.value.single().folderId)
+
+        vm.createFolder("fizik")
+        assertEquals(LibraryMessage.FolderNameTaken, vm.state.value.message)
+        vm.createFolder("   ")
+        assertEquals(LibraryMessage.FolderNameBlank, vm.state.value.message)
+        assertEquals(1, repo.folderList.value.size)
+
+        // Subject suggestions skip folders that already exist.
+        vm.createFolders(listOf("Fizik", "Kimya"))
+        assertEquals(listOf("Fizik", "Kimya"), repo.folderList.value.map { it.name })
+    }
+
+    @Test
+    fun deletingTheShownFolderMovesItsDocumentsOutAndShowsEverything() = runTest(UnconfinedTestDispatcher()) {
+        val repo = FakePdfLibraryRepository(tmp.root).apply {
+            add(sampleDocument("a", "A"))
+            add(sampleDocument("b", "B"))
+        }
+        val vm = LibraryViewModel(repo)
+        backgroundScope.launch { vm.documents.collect {} }
+        vm.createFolder("Deneme")
+        val folder = repo.folderList.value.single()
+        vm.moveToFolder(repo.current.value[0], folder)
+        assertEquals(LibraryMessage.Moved("A", "Deneme"), vm.state.value.message)
+        vm.moveToFolder(repo.current.value[1], folder)
+        vm.setFilter(LibraryFilter.Folder(folder.id))
+
+        vm.deleteFolder(folder)
+        assertEquals(LibraryMessage.FolderDeleted("Deneme", 2), vm.state.value.message)
+        assertEquals(LibraryFilter.All, vm.state.value.filter)
+        assertTrue(repo.current.value.all { it.folderId == null })
+        assertEquals(2, repo.current.value.size)
+        assertTrue("PDF files stay", repo.current.value.all { repo.pdfFile(it.id).exists() })
+
+        vm.moveToFolder(repo.current.value[0], null)
+        assertEquals(LibraryMessage.Moved("A", null), vm.state.value.message)
+    }
+
+    @Test
+    fun pinningSortingSearchAndMissingFiles() = runTest(UnconfinedTestDispatcher()) {
+        val repo = FakePdfLibraryRepository(tmp.root).apply {
+            add(sampleDocument("a", "Biyoloji"))
+            add(sampleDocument("b", "Matematik"), withFile = false)
+        }
+        val sort = MutableStateFlow(LibrarySort.RECENT)
+        val vm = LibraryViewModel(
+            repo,
+            sortSetting = sort,
+            saveSort = { sort.value = it },
+            fileExists = { repo.pdfFile(it).exists() },
+            io = Dispatchers.Unconfined,
+        )
+        backgroundScope.launch { vm.visible.collect {} }
+        backgroundScope.launch { vm.missing.collect {} }
+        backgroundScope.launch { vm.sort.collect {} }
+
+        assertEquals(setOf("b"), vm.missing.value)
+
+        vm.setSort(LibrarySort.NAME)
+        assertEquals(LibrarySort.NAME, vm.sort.value)
+        assertEquals(listOf("a", "b"), vm.visible.value!!.map { it.id })
+
+        vm.togglePinned(repo.current.value[1])
+        assertTrue(repo.current.value[1].pinned)
+        assertEquals(listOf("b", "a"), vm.visible.value!!.map { it.id })
+
+        vm.setQuery("biyo")
+        assertEquals(listOf("a"), vm.visible.value!!.map { it.id })
+        vm.setFilter(LibraryFilter.Pinned)
+        assertEquals(emptyList<String>(), vm.visible.value!!.map { it.id })
     }
 }

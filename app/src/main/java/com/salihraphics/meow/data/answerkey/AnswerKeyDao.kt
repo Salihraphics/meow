@@ -100,6 +100,13 @@ interface AnswerKeyDao {
     @Query("UPDATE answer_attempts SET deletedAt = :now, updatedAt = :now WHERE documentId = :documentId AND deletedAt IS NULL")
     suspend fun deleteAttempts(documentId: String, now: Long)
 
+    /** Tests checked since [since], in documents still in the library. */
+    @Query(
+        "SELECT s.* FROM solving_sessions s JOIN pdf_documents d ON d.id = s.documentId " +
+            "WHERE s.checkedAt >= :since AND s.deletedAt IS NULL AND d.deletedAt IS NULL ORDER BY s.checkedAt",
+    )
+    fun observeCheckedSince(since: Long): Flow<List<SolvingSessionEntity>>
+
     @Query("SELECT * FROM solving_sessions WHERE documentId = :documentId AND checkedAt IS NULL AND deletedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
     suspend fun openSession(documentId: String): SolvingSessionEntity?
 

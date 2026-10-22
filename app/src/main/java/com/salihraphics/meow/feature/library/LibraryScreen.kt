@@ -1,5 +1,23 @@
 package com.salihraphics.meow.feature.library
 
+import com.salihraphics.meow.domain.model.LibrarySort
+import com.salihraphics.meow.domain.model.LibraryFolder
+import com.salihraphics.meow.core.designsystem.theme.MeowTokens
+import com.salihraphics.meow.core.designsystem.icon.MeowIcons
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import android.text.format.Formatter
 import com.salihraphics.meow.core.designsystem.theme.cardBorder
 import com.salihraphics.meow.core.designsystem.theme.cardColor
 import android.graphics.BitmapFactory
@@ -99,8 +117,16 @@ fun LibraryRoute(
     onOpen: (PdfDocument) -> Unit,
     onAnswerKey: (PdfDocument) -> Unit,
     onBack: () -> Unit,
+    /** Folder names offered when the student has none yet, e.g. their subjects. */
+    suggestedFolders: List<String> = emptyList(),
+    /** Opens the PDF picker once on arrival (Home's "PDF ekle"). */
+    openPickerOnStart: Boolean = false,
 ) {
     val documents by viewModel.documents.collectAsStateWithLifecycle()
+    val visible by viewModel.visible.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val missing by viewModel.missing.collectAsStateWithLifecycle()
     val keyStatuses by viewModel.keyStatuses.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val untitled = stringResource(R.string.library_untitled)
@@ -108,11 +134,19 @@ fun LibraryRoute(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.onDocumentPicked(uri, untitled)
     }
+    var pickerShown by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(openPickerOnStart) {
+        if (openPickerOnStart && !pickerShown) {
+            pickerShown = true
+            picker.launch(arrayOf("application/pdf"))
+        }
+    }
     LibraryContent(
         documents = documents,
         state = state,
         thumbnails = thumbnails,
         keyStatuses = keyStatuses,
+        organization = LibraryOrganization(visible, folders, sort, missing, suggestedFolders),
         actions = LibraryActions(
             onAdd = { picker.launch(arrayOf("application/pdf")) },
             onOpen = onOpen,
@@ -121,6 +155,15 @@ fun LibraryRoute(
             onRemove = viewModel::remove,
             onBack = onBack,
             onMessageShown = viewModel::messageShown,
+            onQuery = viewModel::setQuery,
+            onFilter = viewModel::setFilter,
+            onSort = viewModel::setSort,
+            onCreateFolder = viewModel::createFolder,
+            onCreateFolders = viewModel::createFolders,
+            onRenameFolder = viewModel::renameFolder,
+            onDeleteFolder = viewModel::deleteFolder,
+            onMove = viewModel::moveToFolder,
+            onTogglePin = viewModel::togglePinned,
         ),
     )
 }
@@ -133,6 +176,25 @@ data class LibraryActions(
     val onRemove: (PdfDocument) -> Unit = {},
     val onBack: () -> Unit = {},
     val onMessageShown: () -> Unit = {},
+    val onQuery: (String) -> Unit = {},
+    val onFilter: (LibraryFilter) -> Unit = {},
+    val onSort: (LibrarySort) -> Unit = {},
+    val onCreateFolder: (String, PdfDocument?) -> Unit = { _, _ -> },
+    val onCreateFolders: (List<String>) -> Unit = {},
+    val onRenameFolder: (LibraryFolder, String) -> Unit = { _, _ -> },
+    val onDeleteFolder: (LibraryFolder) -> Unit = {},
+    val onMove: (PdfDocument, LibraryFolder?) -> Unit = { _, _ -> },
+    val onTogglePin: (PdfDocument) -> Unit = {},
+)
+
+/** What organises the list: the arranged documents, the folders, the sort, missing files. */
+data class LibraryOrganization(
+    /** The documents to show; null means "all of them, as given". */
+    val visible: List<PdfDocument>? = null,
+    val folders: List<LibraryFolder> = emptyList(),
+    val sort: LibrarySort = LibrarySort.RECENT,
+    val missing: Set<String> = emptySet(),
+    val suggestedFolders: List<String> = emptyList(),
 )
 
 @Composable
@@ -142,6 +204,7 @@ fun LibraryContent(
     thumbnails: ThumbnailLoader,
     actions: LibraryActions,
     keyStatuses: Map<String, KeyStatus> = emptyMap(),
+    organization: LibraryOrganization = LibraryOrganization(),
 ) {
     val snackbar = remember { SnackbarHostState() }
     val messageText = state.message?.let { messageText(it) }
@@ -154,6 +217,12 @@ fun LibraryContent(
 
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
     var removing by rememberSaveable { mutableStateOf<String?>(null) }
+    var moving by rememberSaveable { mutableStateOf<String?>(null) }
+    var creatingFolder by rememberSaveable { mutableStateOf(false) }
+    var renamingFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    var deletingFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    val folders = organization.folders
+    val shown = organization.visible ?: documents
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -166,8 +235,9 @@ fun LibraryContent(
                 Text(
                     stringResource(R.string.library_title),
                     style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.semantics { heading() },
+                    modifier = Modifier.weight(1f).semantics { heading() },
                 )
+                if (!documents.isNullOrEmpty()) SortMenu(organization.sort, actions.onSort)
             }
         },
         floatingActionButton = {
@@ -190,22 +260,40 @@ fun LibraryContent(
                         CircularProgressIndicator()
                     }
                     documents.isEmpty() -> EmptyLibrary(isImporting = state.isImporting, onAdd = actions.onAdd)
-                    else -> LazyVerticalGrid(
+                    else -> Column(Modifier.fillMaxSize()) {
+                    OrganizeBar(
+                        state = state,
+                        folders = folders,
+                        anyPinned = documents.any { it.pinned },
+                        suggested = organization.suggestedFolders,
+                        actions = actions,
+                        onNewFolder = { creatingFolder = true },
+                        onRenameFolder = { renamingFolder = it.id },
+                        onDeleteFolder = { deletingFolder = it.id },
+                    )
+                    if (shown.isNullOrEmpty()) {
+                        NothingHere(state)
+                    } else LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 160.dp),
                         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 96.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(documents, key = { it.id }) { document ->
+                        items(shown, key = { it.id }) { document ->
                             DocumentCard(
                                 document = document,
                                 thumbnails = thumbnails,
                                 keyStatus = keyStatuses[document.id],
+                                folderName = folders.firstOrNull { it.id == document.folderId }?.name
+                                    ?.takeIf { state.filter !is LibraryFilter.Folder },
+                                missing = document.id in organization.missing,
                                 onOpen = { actions.onOpen(document) },
                                 onAnswerKey = { actions.onAnswerKey(document) },
                                 onRename = { renaming = document.id },
                                 onRemove = { removing = document.id },
+                                onMove = { moving = document.id },
+                                onTogglePin = { actions.onTogglePin(document) },
                             )
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -217,9 +305,55 @@ fun LibraryContent(
                             )
                         }
                     }
+                    }
                 }
             }
         }
+    }
+
+    if (creatingFolder) {
+        FolderNameDialog(
+            title = stringResource(R.string.folder_new),
+            initial = "",
+            onDismiss = { creatingFolder = false },
+            onSave = { name -> creatingFolder = false; actions.onCreateFolder(name, null) },
+        )
+    }
+    folders.firstOrNull { it.id == renamingFolder }?.let { folder ->
+        FolderNameDialog(
+            title = stringResource(R.string.folder_rename),
+            initial = folder.name,
+            onDismiss = { renamingFolder = null },
+            onSave = { name -> renamingFolder = null; actions.onRenameFolder(folder, name) },
+        )
+    }
+    folders.firstOrNull { it.id == deletingFolder }?.let { folder ->
+        val count = documents.orEmpty().count { it.folderId == folder.id }
+        AlertDialog(
+            onDismissRequest = { deletingFolder = null },
+            title = { Text(stringResource(R.string.folder_delete_title, folder.name)) },
+            text = {
+                Text(
+                    if (count == 0) stringResource(R.string.folder_delete_empty)
+                    else stringResource(R.string.folder_delete_body, count),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { deletingFolder = null; actions.onDeleteFolder(folder) }) {
+                    Text(stringResource(if (count == 0) R.string.folder_delete_confirm_empty else R.string.folder_delete_confirm))
+                }
+            },
+            dismissButton = { TextButton(onClick = { deletingFolder = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+    documents?.firstOrNull { it.id == moving }?.let { document ->
+        MoveToFolderDialog(
+            document = document,
+            folders = folders,
+            onDismiss = { moving = null },
+            onMove = { folder -> moving = null; actions.onMove(document, folder) },
+            onNewFolder = { name -> moving = null; actions.onCreateFolder(name, document) },
+        )
     }
 
     documents?.firstOrNull { it.id == renaming }?.let { document ->
@@ -254,6 +388,13 @@ private fun messageText(message: LibraryMessage): String = when (message) {
     is LibraryMessage.AlreadyInLibrary -> stringResource(R.string.library_msg_duplicate, message.name)
     is LibraryMessage.Removed -> stringResource(R.string.library_msg_removed, message.name)
     LibraryMessage.RenameFailed -> stringResource(R.string.library_msg_rename_failed)
+    is LibraryMessage.FolderCreated -> stringResource(R.string.folder_msg_created, message.name)
+    LibraryMessage.FolderNameTaken -> stringResource(R.string.folder_msg_taken)
+    LibraryMessage.FolderNameBlank -> stringResource(R.string.folder_msg_blank)
+    is LibraryMessage.FolderDeleted -> if (message.moved == 0) stringResource(R.string.folder_msg_deleted_empty, message.name)
+        else stringResource(R.string.folder_msg_deleted, message.name, message.moved)
+    is LibraryMessage.Moved -> message.folder?.let { stringResource(R.string.folder_msg_moved, message.name, it) }
+        ?: stringResource(R.string.folder_msg_unfiled, message.name)
     is LibraryMessage.ImportFailed -> stringResource(
         when (message.error) {
             PdfImportError.NOT_A_PDF -> R.string.import_error_not_pdf
@@ -330,10 +471,14 @@ private fun DocumentCard(
     document: PdfDocument,
     thumbnails: ThumbnailLoader,
     keyStatus: KeyStatus?,
+    folderName: String?,
+    missing: Boolean,
     onOpen: () -> Unit,
     onAnswerKey: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
+    onMove: () -> Unit,
+    onTogglePin: () -> Unit,
 ) {
     var thumbnail by remember(document.id) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(document.id) { thumbnail = thumbnails(document) }
@@ -348,7 +493,17 @@ private fun DocumentCard(
             modifier = Modifier.fillMaxWidth().aspectRatio(0.75f),
         ) {
             val current = thumbnail
-            if (current != null) {
+            if (missing) {
+                // The copy is gone: say so plainly; opening shows the same message in full.
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        stringResource(R.string.library_missing),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            } else if (current != null) {
                 Image(
                     bitmap = current,
                     contentDescription = null,
@@ -364,6 +519,17 @@ private fun DocumentCard(
         }
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f).padding(top = 2.dp)) {
+                if (document.pinned) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(MeowIcons.Pin, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                        Text(
+                            stringResource(R.string.library_pinned),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 2.dp),
+                        )
+                    }
+                }
                 Text(
                     document.displayName,
                     style = MaterialTheme.typography.titleSmall,
@@ -371,15 +537,25 @@ private fun DocumentCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (document.lastOpenedAt != null && document.lastPageIndex > 0) {
+                    Text(
+                        stringResource(R.string.library_last_page, document.lastPageIndex + 1),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val context = LocalContext.current
                 Text(
-                    if (document.lastOpenedAt != null && document.lastPageIndex > 0) {
-                        stringResource(R.string.library_last_page, document.lastPageIndex + 1)
-                    } else {
-                        stringResource(R.string.library_pages, document.pageCount)
-                    },
+                    stringResource(R.string.library_meta, document.pageCount, Formatter.formatShortFileSize(context, document.sizeBytes)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                folderName?.let {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                        Icon(MeowIcons.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
                 if (keyStatus != null) KeyStatusLabel(keyStatus, onAnswerKey)
             }
             Box {
@@ -390,6 +566,17 @@ private fun DocumentCard(
                     DropdownMenuItem(text = { Text(stringResource(R.string.answer_key_title)) }, onClick = {
                         menuOpen = false
                         onAnswerKey()
+                    })
+                    DropdownMenuItem(
+                        text = { Text(stringResource(if (document.pinned) R.string.library_unpin else R.string.library_pin)) },
+                        onClick = {
+                            menuOpen = false
+                            onTogglePin()
+                        },
+                    )
+                    DropdownMenuItem(text = { Text(stringResource(R.string.folder_move)) }, onClick = {
+                        menuOpen = false
+                        onMove()
                     })
                     DropdownMenuItem(text = { Text(stringResource(R.string.library_rename)) }, onClick = {
                         menuOpen = false
@@ -451,4 +638,220 @@ private fun RenameDialog(initial: String, onDismiss: () -> Unit, onSave: (String
         confirmButton = { TextButton(onClick = { onSave(value) }, enabled = valid) { Text(stringResource(R.string.action_save)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
+}
+
+@Composable
+private fun SortMenu(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(MeowIcons.Sort, contentDescription = stringResource(R.string.library_sort)) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            LibrarySort.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(option.labelRes)) },
+                    trailingIcon = { if (option == sort) Icon(Icons.Filled.Check, contentDescription = null) },
+                    onClick = { open = false; onSort(option) },
+                )
+            }
+        }
+    }
+}
+
+private val LibrarySort.labelRes: Int
+    get() = when (this) {
+        LibrarySort.RECENT -> R.string.library_sort_recent
+        LibrarySort.NAME -> R.string.library_sort_name
+        LibrarySort.ADDED -> R.string.library_sort_added
+    }
+
+/**
+ * Search, and the parts of the library as chips: all, pinned, "Klasörsüz", each folder, and a
+ * new folder. With a folder chosen, its rename and delete are right there.
+ */
+@Composable
+private fun OrganizeBar(
+    state: LibraryUiState,
+    folders: List<LibraryFolder>,
+    anyPinned: Boolean,
+    suggested: List<String>,
+    actions: LibraryActions,
+    onNewFolder: () -> Unit,
+    onRenameFolder: (LibraryFolder) -> Unit,
+    onDeleteFolder: (LibraryFolder) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        OutlinedTextField(
+            value = state.query,
+            onValueChange = actions.onQuery,
+            placeholder = { Text(stringResource(R.string.library_search)) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (state.query.isNotEmpty()) {
+                    IconButton(onClick = { actions.onQuery("") }) {
+                        Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.library_search_clear))
+                    }
+                }
+            },
+            singleLine = true,
+            shape = MeowTokens.ControlShape,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            item { FilterChip(state.filter == LibraryFilter.All, { actions.onFilter(LibraryFilter.All) }, { Text(stringResource(R.string.library_filter_all)) }) }
+            if (anyPinned || state.filter == LibraryFilter.Pinned) {
+                item {
+                    FilterChip(
+                        state.filter == LibraryFilter.Pinned,
+                        { actions.onFilter(LibraryFilter.Pinned) },
+                        { Text(stringResource(R.string.library_filter_pinned)) },
+                        leadingIcon = { Icon(MeowIcons.Pin, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    )
+                }
+            }
+            if (folders.isNotEmpty()) {
+                item { FilterChip(state.filter == LibraryFilter.Unfiled, { actions.onFilter(LibraryFilter.Unfiled) }, { Text(stringResource(R.string.library_filter_unfiled)) }) }
+            }
+            items(folders, key = { it.id }) { folder ->
+                FilterChip(
+                    state.filter == LibraryFilter.Folder(folder.id),
+                    { actions.onFilter(LibraryFilter.Folder(folder.id)) },
+                    { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(MeowIcons.Folder, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                )
+            }
+            item {
+                AssistChip(
+                    onClick = onNewFolder,
+                    label = { Text(stringResource(R.string.folder_new)) },
+                    leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                )
+            }
+        }
+        val folder = (state.filter as? LibraryFilter.Folder)?.let { f -> folders.firstOrNull { it.id == f.id } }
+        if (folder != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    folder.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onRenameFolder(folder) }) { Text(stringResource(R.string.folder_rename)) }
+                TextButton(onClick = { onDeleteFolder(folder) }) { Text(stringResource(R.string.folder_delete), color = MaterialTheme.colorScheme.error) }
+            }
+        } else if (folders.isEmpty() && suggested.isNotEmpty()) {
+            // A useful start, never forced: one folder per subject from the student's profile.
+            TextButton(onClick = { actions.onCreateFolders(suggested) }) {
+                Icon(MeowIcons.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(
+                    stringResource(R.string.folder_from_subjects, suggested.joinToString(", ")),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+/** No document matches the search, or the chosen part of the library is empty. */
+@Composable
+private fun NothingHere(state: LibraryUiState) {
+    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(
+            when {
+                state.query.isNotBlank() -> stringResource(R.string.library_no_results, state.query.trim())
+                state.filter is LibraryFilter.Folder -> stringResource(R.string.folder_empty)
+                state.filter == LibraryFilter.Pinned -> stringResource(R.string.library_no_pinned)
+                else -> stringResource(R.string.library_no_unfiled)
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun FolderNameDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var value by rememberSaveable { mutableStateOf(initial) }
+    val valid = LibraryFolder.sanitizeName(value) != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it.take(LibraryFolder.MAX_NAME_LENGTH) },
+                label = { Text(stringResource(R.string.folder_name)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(value) }, enabled = valid) { Text(stringResource(R.string.action_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/** Where a document goes: "Klasörsüz", an existing folder, or a new one. Its file stays put. */
+@Composable
+private fun MoveToFolderDialog(
+    document: PdfDocument,
+    folders: List<LibraryFolder>,
+    onDismiss: () -> Unit,
+    onMove: (LibraryFolder?) -> Unit,
+    onNewFolder: (String) -> Unit,
+) {
+    var newName by rememberSaveable { mutableStateOf("") }
+    var naming by rememberSaveable { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.folder_move_title, document.displayName), maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                FolderOption(stringResource(R.string.library_filter_unfiled), selected = document.folderId == null) { onMove(null) }
+                folders.forEach { folder -> FolderOption(folder.name, selected = document.folderId == folder.id) { onMove(folder) } }
+                Spacer(Modifier.height(8.dp))
+                // The name field appears on request, so the list of folders stays the focus.
+                if (!naming) {
+                    TextButton(onClick = { naming = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(stringResource(R.string.folder_new), modifier = Modifier.padding(start = 6.dp))
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it.take(LibraryFolder.MAX_NAME_LENGTH) },
+                        label = { Text(stringResource(R.string.folder_new_name)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextButton(onClick = { onNewFolder(newName) }, enabled = LibraryFolder.sanitizeName(newName) != null) {
+                        Text(stringResource(R.string.folder_create_and_move))
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+@Composable
+private fun FolderOption(name: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }

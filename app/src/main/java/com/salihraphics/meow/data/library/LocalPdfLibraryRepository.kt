@@ -1,5 +1,8 @@
 package com.salihraphics.meow.data.library
 
+import com.salihraphics.meow.domain.model.LibraryFolder
+import com.salihraphics.meow.domain.model.FolderResult
+import com.salihraphics.meow.data.library.db.LibraryFolderEntity
 import android.net.Uri
 import com.salihraphics.meow.data.annotation.StrokeDao
 import com.salihraphics.meow.data.library.db.PdfDocumentDao
@@ -122,6 +125,46 @@ class LocalPdfLibraryRepository(
         dao.updateViewRotation(id, Math.floorMod(degrees, 360), now())
     }
 
+    override val folders: Flow<List<LibraryFolder>> = dao.observeFolders().map { rows -> rows.map { it.toDomain() } }
+
+    override suspend fun createFolder(name: String): FolderResult {
+        val clean = LibraryFolder.sanitizeName(name) ?: return FolderResult.BlankName
+        if (nameTaken(clean, except = null)) return FolderResult.DuplicateName
+        val time = now()
+        val entity = LibraryFolderEntity(newId(), clean, time, time, null)
+        dao.insertFolder(entity)
+        return FolderResult.Done(entity.toDomain())
+    }
+
+    override suspend fun renameFolder(id: String, name: String): FolderResult {
+        val clean = LibraryFolder.sanitizeName(name) ?: return FolderResult.BlankName
+        if (nameTaken(clean, except = id)) return FolderResult.DuplicateName
+        return if (dao.renameFolder(id, clean, now()) > 0) FolderResult.Done(LibraryFolder(id, clean)) else FolderResult.NotFound
+    }
+
+    override suspend fun deleteFolder(id: String) {
+        val time = now()
+        // Documents first: if anything stops half-way, the worst case is an empty folder.
+        dao.clearFolder(id, time)
+        dao.markFolderDeleted(id, time)
+    }
+
+    override suspend fun moveToFolder(documentId: String, folderId: String?) {
+        val target = folderId?.takeIf { id -> dao.folders().any { it.id == id } }
+        if (folderId != null && target == null) return // the folder is gone; leave the document where it is
+        dao.updateFolder(documentId, target, now())
+    }
+
+    override suspend fun setPinned(documentId: String, pinned: Boolean) {
+        dao.updatePinned(documentId, pinned, now())
+    }
+
+    /** Folder names compare the Turkish way: "Işık" and "ışık" are the same name. */
+    private suspend fun nameTaken(name: String, except: String?): Boolean {
+        val key = name.lowercase(TURKISH)
+        return dao.folders().any { it.id != except && it.name.lowercase(TURKISH) == key }
+    }
+
     override fun pdfFile(id: String): File = files.pdfFile(id)
 
     override fun thumbnailFile(id: String): File = files.thumbnailFile(id)
@@ -177,3 +220,5 @@ class LocalPdfLibraryRepository(
         const val THUMBNAIL_WIDTH_PX = 320
     }
 }
+
+private val TURKISH = java.util.Locale("tr", "TR")

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.salihraphics.meow.data.account.AccountRepository
 import com.salihraphics.meow.data.preferences.UserPreferencesRepository
 import com.salihraphics.meow.domain.model.AccountState
+import com.salihraphics.meow.domain.model.ExamGoal
 import com.salihraphics.meow.domain.model.ExamType
 import com.salihraphics.meow.domain.model.SessionLength
 import com.salihraphics.meow.domain.model.StudyLevel
@@ -50,6 +51,11 @@ class SettingsViewModel(
 
     fun setImmediateFeedback(enabled: Boolean) {
         viewModelScope.launch { repository.setImmediateFeedback(enabled) }
+    }
+
+    /** Null removes the exam goal; the countdown on Home then offers to set one. */
+    fun setExamGoal(goal: ExamGoal?) {
+        viewModelScope.launch { repository.setExamGoal(goal) }
     }
 
     fun setThemeMode(mode: ThemeMode) {

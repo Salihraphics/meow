@@ -55,6 +55,9 @@ sealed interface ViewerUiState {
     ) : ViewerUiState
 }
 
+/** Navigation argument: the page to open at; -1 or absent means "where the student left off". */
+const val VIEWER_START_PAGE = "page"
+
 class PdfViewerViewModel(
     private val documentId: String,
     /** Keeps the exact viewport across process death, not just rotation. */
@@ -157,7 +160,10 @@ class PdfViewerViewModel(
         layoutSource = layoutSourceFactory?.invoke(file, opened)
         val lastIndex = opened.pageSizes.lastIndex
         val restored = viewport?.let { it.copy(pageIndex = it.pageIndex.coerceIn(0, lastIndex)) }
-        val start = restored?.pageIndex ?: document.lastPageIndex.coerceIn(0, lastIndex)
+        // A page asked for by the caller (a note on Home) wins over the saved reading position,
+        // but not over the exact viewport restored after rotation or process death.
+        val requested = savedState.get<Int>(VIEWER_START_PAGE)?.takeIf { it >= 0 }
+        val start = restored?.pageIndex ?: (requested ?: document.lastPageIndex).coerceIn(0, lastIndex)
         viewport = restored ?: ViewportSnapshot(pageIndex = start)
         currentPage = start
         repository.recordReading(documentId, start)

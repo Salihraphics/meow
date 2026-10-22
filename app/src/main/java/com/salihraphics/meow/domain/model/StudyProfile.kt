@@ -59,6 +59,9 @@ data class StudyProfile(
     }
 }
 
+/** How the library lists documents. */
+enum class LibrarySort { RECENT, NAME, ADDED }
+
 data class UserPreferences(
     val onboardingCompleted: Boolean = false,
     val profile: StudyProfile = StudyProfile(),
@@ -66,4 +69,7 @@ data class UserPreferences(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Show right/wrong as soon as an answer is circled, instead of when the test is checked. */
     val immediateFeedback: Boolean = false,
+    /** The exam the student counts down to; null until they set one. */
+    val examGoal: ExamGoal? = null,
+    val librarySort: LibrarySort = LibrarySort.RECENT,
 )

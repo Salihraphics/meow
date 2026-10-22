@@ -1,5 +1,7 @@
 package com.salihraphics.meow
 
+import com.salihraphics.meow.data.dashboard.DashboardRepository
+import com.salihraphics.meow.data.dashboard.RoomDashboardRepository
 import android.content.Context
 import com.salihraphics.meow.analysis.AnswerKeyAnalysisScheduler
 import com.salihraphics.meow.analysis.AnswerKeyAnalyzer
@@ -97,6 +99,11 @@ class AppContainer(context: Context) {
     }
 
     val pdfRenderSessionFactory: PdfRenderSessionFactory = AndroidPdfRenderSession.Factory
+
+    /** What the home dashboard reads: recent notes, timer sessions, checked tests. */
+    val dashboardRepository: DashboardRepository by lazy {
+        RoomDashboardRepository(database.strokes(), database.study(), database.answerKeys())
+    }
 
     /** One study timer for the whole app; keeps running while the student moves between PDFs. */
     val studyTimer: StudyTimerController by lazy { StudyTimerController(database.study(), applicationScope) }

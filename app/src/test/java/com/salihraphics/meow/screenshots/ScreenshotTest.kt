@@ -28,7 +28,6 @@ import com.salihraphics.meow.domain.model.StudyLevel
 import com.salihraphics.meow.domain.model.StudyProfile
 import com.salihraphics.meow.domain.model.Subject
 import com.salihraphics.meow.domain.model.UserPreferences
-import com.salihraphics.meow.feature.home.HomeScreen
 import com.salihraphics.meow.feature.onboarding.OnboardingActions
 import com.salihraphics.meow.feature.onboarding.OnboardingContent
 import com.salihraphics.meow.feature.onboarding.OnboardingStep
@@ -88,8 +87,10 @@ class ScreenshotTest {
     @Test fun readyLight() = step(OnboardingStep.READY, dark = false)
     @Test fun readyDark() = step(OnboardingStep.READY, dark = true)
 
-    @Test fun homeLight() = shoot("home", dark = false) { HomeScreen(answered.toProfile(), onOpenSettings = {}, onOpenLibrary = {}, libraryCount = 3) }
-    @Test fun homeEmptyDark() = shoot("home_empty", dark = true) { HomeScreen(StudyProfile(), onOpenSettings = {}, onOpenLibrary = {}, libraryCount = 0) }
+    @Test fun homeLight() = shoot("home", dark = false) { SampleHome(answered.toProfile()) }
+    @Test fun homeDark() = shoot("home", dark = true) { SampleHome(answered.toProfile()) }
+    @Test fun homeEmptyDark() = shoot("home_empty", dark = true) { SampleHome(StudyProfile(), full = false, goal = null) }
+    @Test fun homeEmptyLight() = shoot("home_empty", dark = false) { SampleHome(StudyProfile(), full = false, goal = null) }
 
     @Test fun settingsLight() = shoot("settings", dark = false) {
         val repo = FakeUserPreferencesRepository(UserPreferences(onboardingCompleted = true, profile = answered.toProfile()))

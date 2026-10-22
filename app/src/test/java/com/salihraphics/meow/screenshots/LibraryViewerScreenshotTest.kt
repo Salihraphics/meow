@@ -20,6 +20,11 @@ import com.salihraphics.meow.feature.library.LibraryActions
 import com.salihraphics.meow.feature.library.LibraryContent
 import com.salihraphics.meow.feature.library.LibraryMessage
 import com.salihraphics.meow.feature.library.LibraryUiState
+import com.salihraphics.meow.feature.library.LibraryFilter
+import com.salihraphics.meow.feature.library.LibraryOrganization
+import com.salihraphics.meow.feature.library.LibraryOrganizer
+import com.salihraphics.meow.domain.model.LibraryFolder
+import com.salihraphics.meow.domain.model.LibrarySort
 import com.salihraphics.meow.domain.model.AnswerAttempt
 import com.salihraphics.meow.domain.model.AttemptResult
 import com.salihraphics.meow.domain.model.SelectionOrigin
@@ -126,6 +131,40 @@ class LibraryViewerScreenshotTest {
     @Test @Config(qualifiers = PHONE) fun libraryError() =
         library("phone_library_error", docs, LibraryUiState(message = LibraryMessage.ImportFailed(PdfImportError.PASSWORD_PROTECTED)))
     @Test @Config(qualifiers = TABLET_LANDSCAPE) fun libraryTablet() = library("tablet_library", docs)
+
+    private val folders = listOf(LibraryFolder("f1", "Matematik"), LibraryFolder("f2", "Fizik"), LibraryFolder("f3", "Denemeler"))
+    private val organized = listOf(
+        docs[0].copy(folderId = "f1", pinned = true),
+        docs[1].copy(folderId = "f2"),
+        docs[2],
+        docs[3].copy(folderId = "f3"),
+    )
+
+    private fun organizedLibrary(name: String, dark: Boolean = false, filter: LibraryFilter = LibraryFilter.All, missing: Set<String> = emptySet()) = shoot(name, dark) {
+        val state = LibraryUiState(filter = filter)
+        LibraryContent(
+            organized, state, thumbnails, LibraryActions(),
+            organization = LibraryOrganization(
+                visible = LibraryOrganizer.arrange(organized, filter, "", LibrarySort.RECENT),
+                folders = folders,
+                missing = missing,
+            ),
+        )
+    }
+
+    @Test @Config(qualifiers = PHONE) fun libraryFolders() = organizedLibrary("phone_library_folders", missing = setOf("4"))
+    @Test @Config(qualifiers = PHONE) fun libraryFoldersDark() = organizedLibrary("phone_library_folders_dark", dark = true, missing = setOf("4"))
+    @Test @Config(qualifiers = PHONE) fun libraryFolderEmpty() = shoot("phone_library_folder_empty") {
+        LibraryContent(
+            organized, LibraryUiState(filter = LibraryFilter.Folder("x")), thumbnails, LibraryActions(),
+            organization = LibraryOrganization(visible = emptyList(), folders = folders + LibraryFolder("x", "Geometri")),
+        )
+    }
+    @Test @Config(qualifiers = PHONE) fun libraryFirstFolders() = shoot("phone_library_suggest") {
+        LibraryContent(docs, LibraryUiState(), thumbnails, LibraryActions(), organization = LibraryOrganization(suggestedFolders = listOf("Matematik", "Fizik", "Kimya")))
+    }
+    @Test @Config(qualifiers = TABLET_LANDSCAPE) fun libraryFoldersTablet() = organizedLibrary("tablet_library_folders", filter = LibraryFilter.All)
+    @Test @Config(qualifiers = TABLET_LANDSCAPE) fun libraryFoldersTabletDark() = organizedLibrary("tablet_library_folders_dark", dark = true)
 
     @Test @Config(qualifiers = PHONE) fun viewerPhone() = viewer("phone_viewer", ready)
     @Test @Config(qualifiers = PHONE) fun viewerPhoneDark() = viewer("phone_viewer_dark", ready, dark = true)

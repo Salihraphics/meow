@@ -59,10 +59,12 @@ class OnboardingFlowTest {
         rule.activityRule.scenario.recreate()
         waitForText(text(R.string.home_greeting_named, "Deniz"))
         rule.onNodeWithText(text(R.string.home_greeting_named, "Deniz")).assertIsDisplayed()
-        rule.onNodeWithText(text(R.string.exam_lgs)).assertIsDisplayed()
+        // A fresh dashboard: no PDFs yet, so it offers the first import instead of made-up items.
+        waitForText(text(R.string.home_first_pdf_title))
+        rule.onNodeWithText(text(R.string.home_first_pdf_title)).assertIsDisplayed()
 
         // The library is reachable from Home and starts empty (real Room database).
-        rule.onNodeWithText(text(R.string.home_library_title)).performScrollTo().performClick()
+        rule.onNodeWithText(text(R.string.home_action_library)).performScrollTo().performClick()
         waitForText(text(R.string.library_empty_title))
         rule.onNodeWithText(text(R.string.library_add)).assertIsDisplayed()
     }

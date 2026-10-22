@@ -15,7 +15,6 @@ import com.salihraphics.meow.domain.model.SessionLength
 import com.salihraphics.meow.domain.model.StudyLevel
 import com.salihraphics.meow.domain.model.Subject
 import com.salihraphics.meow.domain.model.UserPreferences
-import com.salihraphics.meow.feature.home.HomeScreen
 import com.salihraphics.meow.feature.onboarding.OnboardingActions
 import com.salihraphics.meow.feature.onboarding.OnboardingContent
 import com.salihraphics.meow.feature.onboarding.OnboardingStep
@@ -64,7 +63,7 @@ class AdaptiveScreenshotTest {
             OnboardingContent(answered.copy(step = step), OnboardingActions())
         }
 
-    private fun home(device: String) = shoot("${device}_home") { HomeScreen(answered.toProfile(), onOpenSettings = {}, onOpenLibrary = {}, libraryCount = 3) }
+    private fun home(device: String) = shoot("${device}_home") { SampleHome(answered.toProfile()) }
 
     private fun settings(device: String) = shoot("${device}_settings") {
         val repo = FakeUserPreferencesRepository(UserPreferences(onboardingCompleted = true, profile = answered.toProfile()))

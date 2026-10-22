@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -33,6 +34,14 @@ class DataStoreUserPreferencesRepositoryTest {
     )
 
     @After fun tearDown() = scope.cancel()
+
+    /** Writes with one store, closes it, and reads with a new one: what an app restart does. */
+    private suspend fun <T> afterRestart(fileName: String, write: suspend (DataStoreUserPreferencesRepository) -> Unit, read: (UserPreferences) -> T): T {
+        val first = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        write(DataStoreUserPreferencesRepository(PreferenceDataStoreFactory.create(scope = first) { tmp.root.resolve(fileName) }))
+        first.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
+        return read(repository(fileName).preferences.first())
+    }
 
     @Test
     fun freshInstallHasDefaults() = runBlocking {
@@ -88,5 +97,44 @@ class DataStoreUserPreferencesRepositoryTest {
         val profile = repo.preferences.first().profile
         assertEquals(null, profile.level)
         assertEquals(null, profile.displayName)
+    }
+
+    @Test
+    fun anExamGoalWithTheStudentsOwnDatesSurvivesRestart() = runBlocking {
+        val goal = com.salihraphics.meow.domain.model.ExamGoal(
+            com.salihraphics.meow.domain.model.ExamGoalType.YKS,
+            dates = mapOf(com.salihraphics.meow.domain.model.ExamSession.AYT_YDT to com.salihraphics.meow.domain.model.ExamDate(2027, 6, 27, 10, 15)),
+        )
+        val reread = afterRestart("exam.preferences_pb", { it.setExamGoal(goal) }) { it.examGoal }
+        assertEquals(goal, reread)
+        assertTrue(reread!!.isEstimated(com.salihraphics.meow.domain.model.ExamSession.TYT))
+    }
+
+    @Test
+    fun disablingKeepsTheChoiceAndClearingForgetsIt() = runBlocking {
+        val repo = repository("exam2.preferences_pb")
+        val lgs = com.salihraphics.meow.domain.model.ExamGoal(com.salihraphics.meow.domain.model.ExamGoalType.LGS)
+        repo.setExamGoal(lgs.copy(enabled = false))
+        assertEquals(lgs.copy(enabled = false), repo.preferences.first().examGoal)
+        repo.setExamGoal(null)
+        assertEquals(null, repo.preferences.first().examGoal)
+    }
+
+    @Test
+    fun changingTheExamDropsDatesOfTheOtherExam() = runBlocking {
+        val repo = repository("exam3.preferences_pb")
+        repo.setExamGoal(
+            com.salihraphics.meow.domain.model.ExamGoal(
+                com.salihraphics.meow.domain.model.ExamGoalType.LGS,
+                dates = mapOf(com.salihraphics.meow.domain.model.ExamSession.TYT to com.salihraphics.meow.domain.model.ExamDate(2027, 1, 1)),
+            ),
+        )
+        assertTrue(repo.preferences.first().examGoal!!.dates.isEmpty())
+    }
+
+    @Test
+    fun theLibrarySortIsRemembered() = runBlocking {
+        val sort = afterRestart("sort.preferences_pb", { it.setLibrarySort(com.salihraphics.meow.domain.model.LibrarySort.NAME) }) { it.librarySort }
+        assertEquals(com.salihraphics.meow.domain.model.LibrarySort.NAME, sort)
     }
 }

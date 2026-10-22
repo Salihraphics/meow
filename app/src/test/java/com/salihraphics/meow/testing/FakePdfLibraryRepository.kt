@@ -1,5 +1,8 @@
 package com.salihraphics.meow.testing
 
+import kotlinx.coroutines.flow.Flow
+import com.salihraphics.meow.domain.model.LibraryFolder
+import com.salihraphics.meow.domain.model.FolderResult
 import android.graphics.Bitmap
 import android.net.Uri
 import com.salihraphics.meow.data.library.PdfLibraryRepository
@@ -62,6 +65,38 @@ class FakePdfLibraryRepository(private val dir: File) : PdfLibraryRepository {
 
     override suspend fun setViewRotation(id: String, degrees: Int) {
         current.update { list -> list.map { if (it.id == id) it.copy(viewRotation = Math.floorMod(degrees, 360)) else it } }
+    }
+
+    val folderList = MutableStateFlow<List<LibraryFolder>>(emptyList())
+    override val folders: Flow<List<LibraryFolder>> = folderList
+    private var folderIds = 0
+
+    override suspend fun createFolder(name: String): FolderResult {
+        val clean = LibraryFolder.sanitizeName(name) ?: return FolderResult.BlankName
+        if (folderList.value.any { it.name.equals(clean, ignoreCase = true) }) return FolderResult.DuplicateName
+        val folder = LibraryFolder("f${++folderIds}", clean)
+        folderList.update { it + folder }
+        return FolderResult.Done(folder)
+    }
+
+    override suspend fun renameFolder(id: String, name: String): FolderResult {
+        val clean = LibraryFolder.sanitizeName(name) ?: return FolderResult.BlankName
+        if (folderList.value.any { it.id != id && it.name.equals(clean, ignoreCase = true) }) return FolderResult.DuplicateName
+        folderList.update { list -> list.map { if (it.id == id) it.copy(name = clean) else it } }
+        return FolderResult.Done(LibraryFolder(id, clean))
+    }
+
+    override suspend fun deleteFolder(id: String) {
+        current.update { list -> list.map { if (it.folderId == id) it.copy(folderId = null) else it } }
+        folderList.update { list -> list.filterNot { it.id == id } }
+    }
+
+    override suspend fun moveToFolder(documentId: String, folderId: String?) {
+        current.update { list -> list.map { if (it.id == documentId) it.copy(folderId = folderId) else it } }
+    }
+
+    override suspend fun setPinned(documentId: String, pinned: Boolean) {
+        current.update { list -> list.map { if (it.id == documentId) it.copy(pinned = pinned) else it } }
     }
 
     override fun pdfFile(id: String) = File(dir, "$id.pdf")
