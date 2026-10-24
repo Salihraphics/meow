@@ -15,12 +15,12 @@ object StrokeGeometry {
     fun toFraction(x: Float, y: Float, width: Float, height: Float): Pair<Float, Float> =
         (x / width).coerceIn(0f, 1f) to (y / height).coerceIn(0f, 1f)
 
-    /** Whether a new point is far enough from the previous one to keep. */
-    fun shouldAppend(points: List<Float>, x: Float, y: Float, aspect: Float): Boolean {
+    /** Whether a new point is at least [spacing] (a fraction of the width) from the previous one. */
+    fun shouldAppend(points: List<Float>, x: Float, y: Float, aspect: Float, spacing: Float = MIN_POINT_SPACING): Boolean {
         if (points.size < 2) return true
         val dx = x - points[points.size - 2]
-        val dy = (y - points[points.size - 1]) / aspect
-        return hypot(dx, dy) >= MIN_POINT_SPACING
+        val dy = (y - points[points.size - 1]) * aspect
+        return hypot(dx, dy) >= spacing
     }
 
     /**

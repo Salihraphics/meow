@@ -292,4 +292,59 @@ class AnnotationStorageTest {
         }
         db.query("SELECT COUNT(*) FROM library_folders").use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
     }
+
+    @Test
+    fun upgradingFromVersion8KeepsEveryStrokeAndAddsNoPressure() {
+        val name = "upgrade8.db"
+        migrations.createDatabase(name, 8).apply {
+            execSQL(
+                "INSERT INTO pdf_documents (id, displayName, originalFileName, sizeBytes, pageCount, contentSha256, importedAt, " +
+                    "lastOpenedAt, lastPageIndex, updatedAt, deletedAt, viewRotation, folderId, pinned) VALUES ('doc', 'TYT', 'f.pdf', 10, 80, 'h', 1, 2, 12, 2, NULL, 0, 'f1', 1)",
+            )
+            execSQL(
+                "INSERT INTO annotation_strokes (id, documentId, pageIndex, tool, color, width, points, createdAt, updatedAt, deletedAt, noteId) " +
+                    "VALUES ('s1', 'doc', 12, 'PEN', -16777216, 0.005, x'0000803E0000003F', 1, 1, NULL, NULL)",
+            )
+            execSQL(
+                "INSERT INTO sticky_notes (id, documentId, pageIndex, x, y, width, height, text, color, createdAt, updatedAt, deletedAt) " +
+                    "VALUES ('n1', 'doc', 12, 0.1, 0.2, 0.3, 0.16, 'Türev', -6528, 1, 1, NULL)",
+            )
+            execSQL(
+                "INSERT INTO answer_attempts (id, documentId, testId, questionNumber, pageIndex, selected, selectionOrigin, result, strokeId, " +
+                    "createdAt, updatedAt, deletedAt) VALUES ('a1', 'doc', 't1', 4, 12, 'C', 'RECOGNIZED', 'CORRECT', 's1', 1, 1, NULL)",
+            )
+            close()
+        }
+        val db = migrations.runMigrationsAndValidate(name, 9, true)
+        db.query("SELECT points, pressures, noteId FROM annotation_strokes WHERE id = 's1'").use {
+            assertTrue(it.moveToFirst())
+            assertArrayEquals(floatArrayOf(0.25f, 0.5f), StrokeEntity.decodePoints(it.getBlob(0)), 0f)
+            assertTrue("uniform width, as before", it.isNull(1))
+        }
+        db.query("SELECT folderId, pinned, lastPageIndex FROM pdf_documents WHERE id = 'doc'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("f1", it.getString(0))
+            assertEquals(1, it.getInt(1))
+            assertEquals(12, it.getInt(2))
+        }
+        db.query("SELECT text FROM sticky_notes WHERE id = 'n1'").use { assertTrue(it.moveToFirst()); assertEquals("Türev", it.getString(0)) }
+        db.query("SELECT result FROM answer_attempts WHERE id = 'a1'").use { assertTrue(it.moveToFirst()); assertEquals("CORRECT", it.getString(0)) }
+    }
+
+    @Test
+    fun pressuresSurviveClosingAndReopening() = runBlocking {
+        val file = tmp.root.resolve("p.db")
+        val first = openDb(file)
+        val repo = LocalAnnotationRepository(first.strokes(), scope) { clock }
+        val pressed = stroke("p").copy(pressures = floatArrayOf(0.2f, 0.8f))
+        repo.add(pressed)
+        repo.add(stroke("plain"))
+        repo.flush()
+        first.close()
+        val second = openDb(file)
+        val again = LocalAnnotationRepository(second.strokes(), scope) { clock }.strokesOnPage("doc", 0)
+        assertEquals(pressed, again.first { it.id == "p" })
+        assertEquals(null, again.first { it.id == "plain" }.pressures)
+        second.close()
+    }
 }

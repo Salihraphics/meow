@@ -58,13 +58,16 @@ in secondary text. Timer: `displaySmall`, semibold, tabular figures.
 - **Sticky notes**: selected note gets a 2dp primary border and a stronger shadow; handles are
   20dp dots with a white edge, centred on the corners, in 40dp touch areas.
 
-- **Home dashboard**: phone is one column (cat, countdown, continue, pinned, recent, quick
-  actions, week, notes); tablets put the countdown in a 320dp card in the top corner beside the
-  cat, then two columns. Numbers in the countdown use tabular digits so they don't shift.
+- **Home dashboard**: a compact greeting row (52/64dp cat, greeting, one-line message,
+  settings), no welcome card. Phone: continue, quick actions, countdown, pinned, recent, week,
+  notes. Tablet: two columns from the top; countdown heads the right column. Numbers in the countdown use tabular digits so they don't shift.
 - **Countdown cells**: `insetColor` tiles in a 2×2 grid; "Tahmini tarih" is a tertiary-container
   chip, a student-entered date a secondary-container chip.
 - **Library bar**: search field, then a scrolling row of filter chips (folders with a folder
   icon) and "Yeni klasör"; folder actions appear under the row when a folder is selected.
+
+- **Tool toggles**: "Şekil düzelt" and "Parmakla çiz" are switch rows with one-line help in the
+  panel, and icon toggles (secondary-container when on) on the phone rail.
 
 ## Mascot (`core/mascot`)
 

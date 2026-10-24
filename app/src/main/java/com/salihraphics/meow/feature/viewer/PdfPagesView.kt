@@ -1,6 +1,13 @@
 package com.salihraphics.meow.feature.viewer
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -102,9 +109,33 @@ class PdfViewportState(initial: ViewportSnapshot) {
     var isRestored by mutableStateOf(false)
         private set
 
-    internal var pinchScale by mutableFloatStateOf(1f)
-    internal var pinchPivot by mutableStateOf(Offset.Zero)
+    /**
+     * The live pinch, shown as a transform of the whole viewport (screen = scale × point +
+     * translation) until the fingers lift and [commitPreview] lays the pages out at the new zoom.
+     */
+    internal var previewScale by mutableFloatStateOf(1f)
+    internal var previewTranslation by mutableStateOf(Offset.Zero)
+
+    /** Where the fingers are: the spot under them is the one kept in place when the pinch is laid out. */
+    private var previewFocus = Offset.Zero
     internal var viewportSize by mutableStateOf(IntSize.Zero)
+
+    /**
+     * A scroll position asked for but not on screen yet (content pixels at the current zoom).
+     * Until the list and the sideways scroll have caught up, it is the truth: the sideways
+     * part is shown through a layer offset in the very same frame, so a zoom never shows one
+     * frame at the old horizontal position.
+     */
+    internal var pending by mutableStateOf<ScrollPosition?>(null)
+
+    /** Uptime until which a second tap is not a double-tap (the first one stopped a fling). */
+    internal var doubleTapBlockedUntil = 0L
+    internal var lastDownUptime = 0L
+
+    /** How pages are measured right now; set by [PdfPagesView] on every layout. */
+    internal var geometry: Geometry? = null
+
+    internal data class Geometry(val viewportWidth: Int, val maxPageWidth: Int, val margin: Int, val pageCount: Int, val shownAspect: (Int) -> Float)
 
     /** The page under the middle of the screen. */
     val currentPage: Int by derivedStateOf {
@@ -114,8 +145,17 @@ class PdfViewportState(initial: ViewportSnapshot) {
             ?: list.firstVisibleItemIndex
     }
 
+    internal fun layoutAt(zoom: Float): PdfLayout? = geometry?.let {
+        PdfLayout(it.viewportWidth, it.maxPageWidth, it.margin, zoom, it.pageCount, it.shownAspect)
+    }
+
+    /** Where the list is now, in content pixels of the current zoom. */
+    internal fun scrollPosition(layout: PdfLayout): ScrollPosition =
+        pending ?: ScrollPosition(layout.scrollY(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset).toFloat(), horizontal.value.toFloat())
+
     /** The current position, or null while the list has not been laid out yet. */
     fun snapshot(): ViewportSnapshot? {
+        if (pending != null) return null
         val info = list.layoutInfo
         val index = list.firstVisibleItemIndex
         val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return null
@@ -143,10 +183,11 @@ class PdfViewportState(initial: ViewportSnapshot) {
             }.first { it != 0 }
             if (size > 0) {
                 list.scrollToItem(page, (target.pageOffsetFraction * size).roundToInt())
-                if (target.horizontalFraction > 0f) {
-                    // One frame for the zoomed width to be laid out before panning into it.
-                    withFrameNanos { }
-                    horizontal.scrollTo((target.horizontalFraction * horizontal.maxValue).roundToInt())
+                val layout = layoutAt(zoom)
+                if (target.horizontalFraction > 0f && layout != null) {
+                    val y = layout.scrollY(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset).toFloat()
+                    pending = ScrollPosition(y, target.horizontalFraction * layout.maxScrollX)
+                    snapshotFlow { pending }.first { it == null }
                 }
             }
             pendingRestore = null
@@ -154,20 +195,37 @@ class PdfViewportState(initial: ViewportSnapshot) {
         isRestored = true
     }
 
-    /** Zooms keeping the content under [pivot] (viewport coordinates) in place. */
-    suspend fun zoomTo(target: Float, pivot: Offset = viewportCentre()) {
+    /**
+     * Lays the pages out at [target] zoom (within the limits) so that the document spot shown at
+     * viewport point [from] ends up at [to]. Everything changes in one go, before the next frame:
+     * the zoom, the list position (applied when the list is next measured, i.e. with the new page
+     * sizes) and the sideways scroll (shown through [pending] until the scroll catches up).
+     */
+    fun commitZoom(target: Float, from: Offset, to: Offset = from) {
         val newZoom = target.coerceIn(MIN_ZOOM, MAX_ZOOM)
-        val factor = newZoom / zoom
-        if (abs(factor - 1f) < 0.01f) return
-        val firstIndex = list.firstVisibleItemIndex
-        val firstOffset = list.firstVisibleItemScrollOffset
-        val horizontalTarget = ((horizontal.value + pivot.x) * factor - pivot.x).roundToInt()
-        zoom = newZoom
-        list.scrollToItem(firstIndex, ((firstOffset + pivot.y) * factor - pivot.y).roundToInt().coerceAtLeast(0))
-        // Wait one frame so the wider layout exists before scrolling sideways into it.
-        withFrameNanos { }
-        horizontal.scrollTo(horizontalTarget.coerceIn(0, horizontal.maxValue))
+        val old = layoutAt(zoom)
+        val new = layoutAt(newZoom)
+        if (old == null || new == null || viewportSize.height <= 0) {
+            zoom = newZoom
+            return
+        }
+        val scroll = ZoomMath.anchor(old, scrollPosition(old), from, new, to, viewportSize.height)
+        moveTo(new, newZoom, scroll)
     }
+
+    private fun moveTo(layout: PdfLayout, newZoom: Float, scroll: ScrollPosition) {
+        val (index, offset) = layout.listPosition(scroll.y.roundToInt())
+        Snapshot.withMutableSnapshot {
+            previewScale = 1f
+            previewTranslation = Offset.Zero
+            zoom = newZoom
+            pending = scroll
+            list.requestScrollToItem(index, offset)
+        }
+    }
+
+    /** Zooms keeping the content under [pivot] (viewport coordinates) in place. */
+    suspend fun zoomTo(target: Float, pivot: Offset = viewportCentre()) = commitZoom(target, pivot)
 
     fun isPageVisible(index: Int): Boolean = list.layoutInfo.visibleItemsInfo.any { it.index == index }
 
@@ -181,16 +239,31 @@ class PdfViewportState(initial: ViewportSnapshot) {
         if (abs(target - currentPage) > 3) list.scrollToItem(target) else list.animateScrollToItem(target)
     }
 
-    internal fun previewPinch(scale: Float, pivot: Offset) {
-        pinchScale = (zoom * scale).coerceIn(MIN_ZOOM, MAX_ZOOM) / zoom
-        pinchPivot = pivot
+    /** Folds one step of a pinch/pan into the preview, keeping the result inside the zoom limits. */
+    internal fun previewBy(step: TouchAction.Transform) {
+        val wanted = previewScale * step.zoom
+        val scale = (zoom * wanted).coerceIn(MIN_ZOOM, MAX_ZOOM) / zoom
+        val factor = scale / previewScale
+        // screen' = factor × (screen − from) + to
+        previewTranslation = (previewTranslation - step.from) * factor + step.to
+        previewScale = scale
+        // Where the scaling happened; a pan or a finger leaving doesn't move it.
+        if (step.zoom != 1f) previewFocus = step.to
     }
 
-    internal suspend fun commitPinch() {
-        val target = zoom * pinchScale
-        val pivot = pinchPivot
-        pinchScale = 1f
-        zoomTo(target, pivot)
+    /** The fingers lifted: lay out at the previewed zoom with the same spot under the same place. */
+    internal fun commitPreview() {
+        val s = previewScale
+        val t = previewTranslation
+        if (abs(s - 1f) < 0.001f && t.getDistance() < 0.5f) {
+            previewScale = 1f
+            previewTranslation = Offset.Zero
+            return
+        }
+        // Anchored at the fingers: pages and gaps scale differently once laid out, so only the
+        // spot under the fingers is guaranteed to stay exactly where the preview showed it.
+        val focus = if (abs(s - 1f) < 0.001f) viewportCentre() else previewFocus
+        commitZoom(zoom * s, (focus - t) / s, focus)
     }
 
     private fun viewportCentre() = Offset(viewportSize.width / 2f, viewportSize.height / 2f)
@@ -228,7 +301,11 @@ fun rememberPdfViewportState(
 /**
  * The PDF pages in a vertically scrolling list. Only pages near the screen are rendered.
  * [pageOverlay] is drawn on top of each page, in that page's bounds; drawing and answer marks
- * will plug in there.
+ * plug in there.
+ *
+ * Who handles a touch is decided by [TouchArbiter]: one finger scrolls (or draws, when
+ * [fingerDraws]); two fingers pinch and pan; a resting thumb is ignored; with a stylus writing,
+ * the palm does nothing.
  */
 @Composable
 fun PdfPagesView(
@@ -238,10 +315,12 @@ fun PdfPagesView(
     /** At 100% pages fit the width, up to this; wide tablets would otherwise show one giant page. */
     maxPageWidth: Dp = 760.dp,
     /**
-     * While true, one finger belongs to [pageOverlay] (drawing), and two fingers pan as well as
-     * zoom. While false, everything behaves as a plain reader.
+     * While true, [pageOverlay] draws: a stylus always, a finger when [fingerDraws]. Two fingers
+     * pan and zoom whatever the tool.
      */
     drawingActive: Boolean = false,
+    /** With a drawing tool, whether one finger draws (no stylus) or scrolls (stylus in use). */
+    fingerDraws: Boolean = true,
     /** How the pages are turned, degrees clockwise; the overlay turns with them. */
     rotation: Int = 0,
     /** A single tap on the pages that nothing on them took (e.g. not on a note). */
@@ -252,33 +331,62 @@ fun PdfPagesView(
     val drawing by rememberUpdatedState(drawingActive)
     val latestOnTap by rememberUpdatedState(onTap)
     val density = LocalDensity.current
+    val fling = ScrollableDefaults.flingBehavior()
+    val latestFling by rememberUpdatedState(fling)
+    // One finger scrolls unless it is the pen.
+    val fingerScrolls = !drawingActive || !fingerDraws
+
+    // Settle the sideways part of a committed zoom or restore once the wider layout exists.
+    LaunchedEffect(state) {
+        snapshotFlow { state.pending }.collectLatest { target ->
+            if (target == null) return@collectLatest
+            // Two frames: the first recomposes and measures at the new zoom, the second sees it.
+            withFrameNanos { }
+            withFrameNanos { }
+            state.horizontal.scrollTo(target.x.roundToInt().coerceIn(0, state.horizontal.maxValue))
+            state.pending = null
+        }
+    }
     BoxWithConstraints(
         modifier
             .clipToBounds()
             .onSizeChanged { state.viewportSize = it }
             .pointerInput(state) {
-                // Two fingers zoom (and pan while drawing); one finger is left to the list or the pen.
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    var scale = 1f
-                    var pinching = false
-                    do {
+                val arbiter = TouchArbiter(viewConfiguration.touchSlop, palmReach = 220.dp.toPx())
+                awaitPointerEventScope {
+                    while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
-                        if (event.changes.count { it.pressed } >= 2) {
-                            pinching = true
-                            scale *= event.calculateZoom()
-                            state.previewPinch(scale, event.calculateCentroid(useCurrent = true))
-                            if (drawing) {
-                                val pan = event.calculatePan()
-                                state.list.dispatchRawDelta(-pan.y)
-                                state.horizontal.dispatchRawDelta(-pan.x)
+                        event.changes.firstOrNull { it.changedToDown() }?.let { down ->
+                            if (state.list.isScrollInProgress || state.horizontal.isScrollInProgress) {
+                                state.doubleTapBlockedUntil = down.uptimeMillis + DOUBLE_TAP_BLOCK_MS
                             }
-                            event.changes.forEach { it.consume() }
-                        } else if (pinching) {
-                            event.changes.forEach { it.consume() }
+                            state.lastDownUptime = down.uptimeMillis
                         }
-                    } while (event.changes.any { it.pressed })
-                    if (pinching) scope.launch { state.commitPinch() }
+                        val samples = event.changes.map {
+                            TouchSample(it.id.value, it.position, it.pressed, it.type == PointerType.Stylus || it.type == PointerType.Eraser, it.uptimeMillis)
+                        }
+                        when (val action = arbiter.onEvent(samples, drawing)) {
+                            TouchAction.Pass -> Unit
+                            TouchAction.Block -> event.changes.forEach { if (it.type == PointerType.Touch) it.consume() }
+                            is TouchAction.Transform -> {
+                                state.previewBy(action)
+                                event.changes.forEach { it.consume() }
+                            }
+                            TouchAction.EndTransform -> {
+                                event.changes.forEach { it.consume() }
+                                state.commitPreview()
+                            }
+                            is TouchAction.Pan -> {
+                                event.changes.forEach { it.consume() }
+                                state.list.dispatchRawDelta(-action.delta.y)
+                                if (state.zoom > 1f) state.horizontal.dispatchRawDelta(-action.delta.x)
+                            }
+                            is TouchAction.EndPan -> {
+                                event.changes.forEach { it.consume() }
+                                scope.launch { state.list.scroll { with(latestFling) { performFling(-action.velocity.y) } } }
+                            }
+                        }
+                    }
                 }
             }
             .pointerInput(state) {
@@ -286,47 +394,78 @@ fun PdfPagesView(
                     onTap = { latestOnTap() },
                     onDoubleTap = { at ->
                         // While drawing, two quick taps are two dots, not a zoom.
-                        if (!drawing) scope.launch { state.zoomTo(if (state.zoom > 1.2f) 1f else 2f, at) }
+                        if (!drawing && state.lastDownUptime >= state.doubleTapBlockedUntil) {
+                            state.commitZoom(if (state.zoom > 1.2f) 1f else 2f, at)
+                        }
                     },
                 )
             },
     ) {
-        val margin = 12.dp
-        val marginPx = with(density) { margin.toPx() }
-        val viewportPx = constraints.maxWidth.toFloat()
-        val baseWidthPx = minOf(viewportPx, with(density) { maxPageWidth.toPx() } + marginPx * 2)
-        val contentWidthPx = baseWidthPx * state.zoom
-        val pageWidthPx = contentWidthPx - marginPx * 2
-        // A quarter-turned page is laid out on its side: its own width is the shown height.
+        val marginPx = with(density) { 12.dp.roundToPx() }
+        val margin = with(density) { marginPx.toDp() }
         val turn = PageRotation.normalize(rotation)
-        Box(Modifier.fillMaxSize().horizontalScroll(state.horizontal, enabled = state.zoom > 1f && !drawingActive)) {
+        val geometry = PdfViewportState.Geometry(
+            viewportWidth = constraints.maxWidth,
+            maxPageWidth = with(density) { maxPageWidth.roundToPx() },
+            margin = marginPx,
+            pageCount = loader.pageCount,
+            shownAspect = { PageRotation.shownAspect(loader.aspectRatio(it), turn) },
+        )
+        state.geometry = geometry
+        val layout = remember(geometry.viewportWidth, geometry.maxPageWidth, marginPx, loader, turn, state.zoom) {
+            state.layoutAt(state.zoom)!!
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    // The live pinch: the whole viewport scaled and moved with the fingers.
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    scaleX = state.previewScale
+                    scaleY = state.previewScale
+                    translationX = state.previewTranslation.x
+                    translationY = state.previewTranslation.y
+                }
+                .horizontalScroll(state.horizontal, enabled = state.zoom > 1f && fingerScrolls),
+        ) {
             LazyColumn(
                 state = state.list,
-                userScrollEnabled = !drawingActive,
+                userScrollEnabled = fingerScrolls,
                 contentPadding = PaddingValues(horizontal = margin, vertical = margin),
                 verticalArrangement = Arrangement.spacedBy(margin),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    // Never narrower than the screen, so small pages sit centred.
-                    .width(with(density) { maxOf(contentWidthPx, viewportPx).toDp() })
+                    .exactWidth(layout.listWidth)
                     .fillMaxHeight()
                     .graphicsLayer {
-                        val s = state.pinchScale
-                        scaleX = s
-                        scaleY = s
-                        transformOrigin = TransformOrigin(
-                            ((state.horizontal.value + state.pinchPivot.x) / size.width).coerceIn(0f, 1f),
-                            (state.pinchPivot.y / size.height).coerceIn(0f, 1f),
-                        )
+                        // Shows a just-committed sideways position before the scroll reaches it.
+                        val target = state.pending
+                        translationX = if (target != null) state.horizontal.value - target.x else 0f
                     },
             ) {
                 items(count = loader.pageCount, key = { it }) { index ->
-                    val ownWidth = if (PageRotation.isQuarterTurn(turn)) pageWidthPx * loader.aspectRatio(index) else pageWidthPx
-                    PdfPage(index, loader, renderWidthFor(ownWidth), turn, Modifier.width(with(density) { pageWidthPx.toDp() }), pageOverlay)
+                    // A quarter-turned page is laid out on its side: its own width is the shown height.
+                    val ownWidth = if (PageRotation.isQuarterTurn(turn)) layout.pageHeight(index).toFloat() else layout.pageWidth.toFloat()
+                    PdfPage(index, loader, renderWidthFor(ownWidth), turn, Modifier.exactSize(layout.pageWidth, layout.pageHeight(index)), pageOverlay)
                 }
             }
         }
     }
+}
+
+/** A tap within this long after one that stopped a fling never completes a double-tap. */
+private const val DOUBLE_TAP_BLOCK_MS = 600L
+
+/** Exactly [width] pixels wide, whatever the parent offers (a horizontal scroll offers infinity). */
+private fun Modifier.exactWidth(width: Int) = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+    layout(width, placeable.height) { placeable.place(0, 0) }
+}
+
+/** The size [PdfLayout] computed, to the pixel, so zoom maths and the screen always agree. */
+private fun Modifier.exactSize(width: Int, height: Int) = layout { measurable, _ ->
+    val placeable = measurable.measure(Constraints.fixed(width, height))
+    layout(width, height) { placeable.place(0, 0) }
 }
 
 @Composable
@@ -343,7 +482,7 @@ private fun PdfPage(
     var failed by remember(index) { mutableStateOf(false) }
     LaunchedEffect(index, renderWidth) {
         try {
-            bitmap = loader.load(index, renderWidth)
+            bitmap = loader.load(index, renderWidth).also { it.prepareToDraw() }
             failed = false
         } catch (e: CancellationException) {
             throw e
@@ -356,7 +495,6 @@ private fun PdfPage(
     val description = stringResource(R.string.viewer_page_cd, index + 1, loader.pageCount)
     Box(
         modifier
-            .aspectRatio(PageRotation.shownAspect(loader.aspectRatio(index), rotation))
             .shadow(1.dp)
             .background(Color.White)
             .semantics { contentDescription = description },

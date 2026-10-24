@@ -175,9 +175,20 @@ private fun NoteView(
             InkCanvas(
                 strokes = ink,
                 tools = tools,
-                onDraw = { points, tool -> session.addStroke(note.pageIndex, points, tool, latest.id, widthScale = page.width / placed().width) },
+                onDraw = { ink ->
+                    val box = placed()
+                    session.addStroke(
+                        note.pageIndex, ink.points, ink.tool, latest.id,
+                        widthScale = page.width / box.width,
+                        pressures = ink.pressures,
+                        aspect = ink.aspect,
+                        // Measured against the page, so letters on a note stay letters.
+                        boxScale = box.width / page.width,
+                    )
+                },
                 onErase = { ids -> session.erase(note.pageIndex, ids) },
                 widthScale = pageW / width,
+                onStylus = session::onStylusSeen,
             )
         }
         if (isSelected) {

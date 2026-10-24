@@ -89,7 +89,7 @@ fun ExamCountdownCard(
     val focus = ExamCountdown.focus(sessions)
     val exam = stringResource(goal.type.labelRes)
     Surface(shape = MeowTokens.CardShape, color = cardColor, border = cardBorder, modifier = modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 14.dp)) {
+        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     when {
@@ -124,7 +124,7 @@ fun ExamCountdownCard(
                     )
                 }
                 CountdownGrid(focus.left ?: Countdown(0, 0, 0, 0), stringResource(focus.session.labelRes))
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     formatExamDate(focus.date),
                     style = MaterialTheme.typography.bodyMedium,
@@ -159,7 +159,7 @@ private fun CountdownGrid(left: Countdown, sessionName: String) {
 @Composable
 private fun RowScope.Cell(value: String, unit: String) {
     Surface(shape = MeowTokens.ControlShape, color = insetColor, modifier = Modifier.weight(1f)) {
-        Column(Modifier.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 value,
                 style = MaterialTheme.typography.headlineSmall.copy(

@@ -74,7 +74,8 @@ import com.salihraphics.meow.core.designsystem.theme.MeowTokens
 import com.salihraphics.meow.core.designsystem.theme.cardBorder
 import com.salihraphics.meow.core.designsystem.theme.cardColor
 import com.salihraphics.meow.core.designsystem.theme.insetColor
-import com.salihraphics.meow.core.mascot.CompanionCat
+import com.salihraphics.meow.core.mascot.MascotEvent
+import com.salihraphics.meow.core.mascot.MeowCat
 import com.salihraphics.meow.core.mascot.MascotState
 import com.salihraphics.meow.core.mascot.rememberMascotState
 import com.salihraphics.meow.domain.model.ExamGoal
@@ -146,7 +147,6 @@ fun HomeContent(
     val twoColumns = LocalMeowWindow.current.useTwoColumns
     var editingGoal by rememberSaveable { mutableStateOf(false) }
 
-    val welcome = @Composable { m: Modifier -> Welcome(twoColumns, m) }
     val exam = @Composable { m: Modifier ->
         if (examGoal != null && examGoal.enabled) {
             ExamCountdownCard(examGoal, rememberTickingNow(clock, ticking), onEdit = { editingGoal = true }, modifier = m)
@@ -159,12 +159,7 @@ fun HomeContent(
             )
         }
     }
-    val study = @Composable {
-        when {
-            documents == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            documents.continueWith == null -> FirstPdf(actions.onAddPdf)
-            else -> ContinueCard(documents.continueWith, thumbnails, documents.folderNames, onOpen = { actions.onOpenDocument(documents.continueWith) })
-        }
+    val studyLists = @Composable {
         if (!documents?.pinned.isNullOrEmpty()) {
             Section(stringResource(R.string.home_pinned_heading))
             PinnedRow(documents!!.pinned, actions.onOpenDocument)
@@ -174,15 +169,26 @@ fun HomeContent(
             RecentList(documents!!.recent, documents.folderNames, clock(), actions.onOpenDocument)
         }
     }
+    val study = @Composable { showLists: Boolean ->
+        when {
+            documents == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            documents.continueWith == null -> FirstPdf(actions.onAddPdf)
+            else -> ContinueCard(documents.continueWith, thumbnails, documents.folderNames, onOpen = { actions.onOpenDocument(documents.continueWith) })
+        }
+        if (showLists) studyLists()
+    }
+    val notesSection = @Composable {
+        if (notes.isNotEmpty()) {
+            Section(stringResource(R.string.home_notes_heading))
+            NotesList(notes, actions.onOpenPage)
+        }
+    }
     val side = @Composable {
         Section(stringResource(R.string.home_quick_heading), top = 0.dp)
         QuickActions(documents?.count, actions, onExam = { editingGoal = true })
         Section(stringResource(R.string.home_summary_heading))
         SummaryCard(summary)
-        if (notes.isNotEmpty()) {
-            Section(stringResource(R.string.home_notes_heading))
-            NotesList(notes, actions.onOpenPage)
-        }
+        notesSection()
     }
 
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -194,41 +200,34 @@ fun HomeContent(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = if (twoColumns) 32.dp else 20.dp),
         ) {
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    profile.displayName?.let { stringResource(R.string.home_greeting_named, it) }
-                        ?: stringResource(R.string.home_greeting),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f).semantics { heading() },
-                )
-                IconButton(onClick = actions.onOpenSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.home_open_settings))
-                }
-            }
-            Spacer(Modifier.height(12.dp))
+            Greeting(profile, twoColumns, actions.onOpenSettings)
+            Spacer(Modifier.height(16.dp))
             if (twoColumns) {
-                // The countdown sits in the top corner, beside the cat.
-                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    welcome(Modifier.weight(1f).fillMaxHeight())
-                    exam(Modifier.width(320.dp))
-                }
-                Spacer(Modifier.height(20.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    Column(Modifier.weight(1.2f)) {
+                // Study first, on the left from the very top; the countdown heads the right
+                // column, in the top corner, with the actions and the week under it.
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column(Modifier.weight(1.25f)) {
                         Section(stringResource(R.string.home_continue_heading), top = 0.dp)
-                        study()
+                        study(true)
                     }
-                    Column(Modifier.weight(1f)) { side() }
+                    Column(Modifier.weight(1f)) {
+                        exam(Modifier)
+                        Spacer(Modifier.height(20.dp))
+                        side()
+                    }
                 }
             } else {
-                welcome(Modifier)
-                Spacer(Modifier.height(12.dp))
+                // Phones: the next study step first, then the countdown, then everything else.
+                Section(stringResource(R.string.home_continue_heading), top = 0.dp)
+                study(false)
+                Spacer(Modifier.height(16.dp))
+                QuickActions(documents?.count, actions, onExam = { editingGoal = true })
+                Spacer(Modifier.height(16.dp))
                 exam(Modifier)
-                Section(stringResource(R.string.home_continue_heading))
-                study()
-                Spacer(Modifier.height(20.dp))
-                side()
+                studyLists()
+                Section(stringResource(R.string.home_summary_heading))
+                SummaryCard(summary)
+                notesSection()
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -246,17 +245,41 @@ fun HomeContent(
     }
 }
 
+/**
+ * The greeting: the cat as a small companion beside it (tap it, it reacts), and what it has to
+ * say as one quiet line. Compact on purpose: the study actions come right under it.
+ */
 @Composable
-private fun Welcome(wide: Boolean, modifier: Modifier) {
+private fun Greeting(profile: StudyProfile, wide: Boolean, onOpenSettings: () -> Unit) {
     val cat = rememberMascotState(MascotState())
-    Surface(shape = MeowTokens.CardShape, color = cardColor, border = cardBorder, modifier = modifier.fillMaxWidth()) {
-        Box(contentAlignment = Alignment.CenterStart) {
-        CompanionCat(
-            holder = cat,
-            defaultSpeech = stringResource(R.string.home_subtitle),
-            modifier = Modifier.padding(start = 8.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
-            catSize = if (wide) 132.dp else 96.dp,
+    val speech = cat.state.speech?.let { stringResource(it) } ?: stringResource(R.string.home_subtitle)
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        MeowCat(
+            mood = cat.state.mood,
+            modifier = Modifier.size(if (wide) 64.dp else 52.dp),
+            onTap = { cat.onEvent(MascotEvent.Tapped) },
+            contentDescription = stringResource(R.string.cd_cat_tap),
         )
+        Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp)) {
+            Text(
+                profile.displayName?.let { stringResource(R.string.home_greeting_named, it) }
+                    ?: stringResource(R.string.home_greeting),
+                style = if (wide) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                speech,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onOpenSettings) {
+            Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.home_open_settings))
         }
     }
 }

@@ -28,6 +28,8 @@ data class StrokeEntity(
     val deletedAt: Long?,
     /** The sticky note this ink was written on; its points are then fractions of the note. */
     @ColumnInfo(defaultValue = "NULL") val noteId: String? = null,
+    /** Stylus pressure per point, little-endian float32; null for uniform-width strokes. */
+    @ColumnInfo(defaultValue = "NULL") val pressures: ByteArray? = null,
 ) {
     fun toDomain() = Stroke(
         id = id,
@@ -38,6 +40,7 @@ data class StrokeEntity(
         width = width,
         points = decodePoints(points),
         noteId = noteId,
+        pressures = pressures?.let { decodePoints(it) },
     )
 
     override fun equals(other: Any?) = other is StrokeEntity && other.id == id && other.updatedAt == updatedAt
@@ -56,6 +59,7 @@ data class StrokeEntity(
             updatedAt = now,
             deletedAt = null,
             noteId = stroke.noteId,
+            pressures = stroke.pressures?.let { encodePoints(it) },
         )
 
         fun encodePoints(points: FloatArray): ByteArray {

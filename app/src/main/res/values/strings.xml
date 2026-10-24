@@ -215,6 +215,11 @@
     <string name="notes_on_page_none">Bu sayfada not yok.</string>
     <string name="notes_help">Not boş eklenir: kalemle üstüne yaz ya da “Aa” ile yazı ekle. Seçili notu ✥ ile taşı, köşesinden büyüt. El aracıyla notu sürükleyebilir, dokunarak seçebilirsin.</string>
     <string name="annotation_two_finger_hint">Kaydırmak ve yakınlaştırmak için iki parmak kullan.</string>
+    <string name="annotation_stylus_hint">Kalemle yaz; bir parmakla kaydır, iki parmakla yakınlaştır. Avucun sayfaya değerse iz bırakmaz.</string>
+    <string name="annotation_finger_draws">Parmakla çiz</string>
+    <string name="annotation_finger_draws_desc">Kapalıyken yalnızca kalem yazar; parmak sayfayı kaydırır.</string>
+    <string name="annotation_shape">Şekil düzelt</string>
+    <string name="annotation_shape_desc">Çizgi, daire, dikdörtgen, üçgen ve oku düzeltir; emin değilse dokunmaz.</string>
 
     <!-- Answer key -->
     <string name="answer_key_title">Cevap anahtarı</string>

@@ -280,6 +280,7 @@ private fun ReadyViewer(
                 state = viewport,
                 modifier = Modifier.weight(1f).fillMaxHeight().pdfBackdrop(),
                 drawingActive = drawing,
+                fingerDraws = tools.fingerDraws,
                 rotation = rotation,
                 onTap = { session.selectNote(null) },
                 pageOverlay = { page ->

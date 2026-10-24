@@ -317,11 +317,96 @@ testing ("55 Günde TYT Matematik VDK 2024") was not available here, so its exac
 reproduced; the layouts above are what such books commonly use. See
 [DEVICE_TEST_CHECKLIST.md](DEVICE_TEST_CHECKLIST.md).
 
+## Viewer stability (scrolling, zoom, gestures)
+
+Reported on a real tablet: scrolling jumped to later pages, the document jittered after zoom,
+and zooming shifted the position. Reproduced first in Robolectric (`ViewerStabilityTest`,
+originally as failing reproductions), then fixed at the cause.
+
+**Root causes found**
+1. **Zoom positioned pages with the old sizes.** `zoomTo` computed the new scroll offset for
+   the new zoom but applied it with `scrollToItem`, which re-measures the list immediately,
+   while the pages still had their old sizes. An offset meant for 1.5× pages was counted
+   through 0.5× pages: a pinch on page 5 landed on page 7. Every pinch and double-tap zoom went
+   through this.
+2. **Zoom maths ignored the fixed gaps and margins and could go negative.** The offset was
+   scaled from the first visible page, so the gaps between pages and the centring at <100%
+   drifted the focus, and zooming out near the top clamped at 0 (the view jumped).
+3. **Sideways position one frame late.** The horizontal scroll was corrected a frame after the
+   new layout: a visible jolt after every zoom.
+4. **Any second touch was a pinch.** A thumb holding the tablet turned scrolling into a zoom
+   (the list stopped scrolling, the page "breathed", and on lifting the zoom changed). The
+   list also only follows the first finger, so a resting thumb blocked scrolling.
+5. **A tap that stopped a fling started a double-tap**, so two quick taps to stop scrolling
+   zoomed to 200%.
+6. The pinch preview scaled around a moving origin and ignored two-finger panning, so what the
+   fingers showed and what was laid out on release differed.
+
+**Fix** (`PdfLayout.kt`, `TouchArbiter.kt`, `PdfPagesView.kt`; same renderer, same lazy list)
+- `PdfLayout` computes every page's exact size and position (pure, unit-tested); pages are laid
+  out at exactly those pixels, so the maths and the screen agree to the pixel.
+- `ZoomMath.anchor` keeps the document spot under the fingers (or the tap, or the screen centre
+  for the buttons) in place, page by page, clamped only at the document's edges.
+- A zoom is committed in one step before the next frame: zoom, `requestScrollToItem` (applied
+  when the list is next measured, with the new sizes), and the sideways target, shown through a
+  layer offset until the scroll catches up.
+- The live pinch is a scale + translation of the viewport following the fingers (two-finger pan
+  works), committed anchored at the pinch focus.
+- `TouchArbiter` decides who owns a touch: one finger → the list; two fingers that landed
+  together or both move → pinch/pan; a finger resting before others land → ignored (the other
+  finger scrolls, with a fling); while drawing, the writing hand (touches down with the stylus,
+  or landing next to it right after) is blocked.
+- Double-tap is ignored when the first tap stopped a fling.
+- Zoom limits unchanged (50%–400%). Rendered bitmaps are uploaded ahead with `prepareToDraw`.
+  Only pages near the screen are rendered (unchanged LRU cache).
+
+## Stylus and handwriting
+
+- **Stylus first.** Fingers draw until a stylus is used; from then on (for the rest of the app
+  session, in every PDF) only the stylus writes and one finger scrolls. "Parmakla çiz" in the
+  tool panel / rail switches finger drawing back on. Devices without a stylus are unchanged.
+- **Palm.** While the stylus writes, other touches are ignored instead of cancelling the line,
+  and a hand resting between strokes neither scrolls nor zooms. Several strokes in a row with
+  the palm down all work (before, only the first stroke of such a gesture was kept).
+- **Eraser end** of a stylus erases whatever tool is selected.
+- **Pressure.** Stored per point (DB v9, `annotation_strokes.pressures`, nullable) only when the
+  stylus reports a changing pressure; the line is thicker where pressed harder (×0.5–×1.45 of
+  the chosen width). Fingers and pressure-less styluses draw a uniform line as before.
+- **Smoothness.** Points are kept about every 1.5 screen pixels (was a fixed fraction of the
+  page, which became coarse at high zoom); curves are smoothed through segment midpoints,
+  which only rounds within a sample. Finished ink is cached in its own layer, so each frame
+  redraws only the line being drawn (a full page of handwriting no longer slows the pen).
+- Not available here: front-buffered (low-latency) rendering and motion prediction need the
+  raw `MotionEvent`, which Compose doesn't expose; latency is the normal Compose frame path.
+
+## Shape correction ("Şekil düzelt")
+
+Off by default; a toggle with the pen and highlighter. On the finished stroke only, on the
+device (`ShapeRecognizer`, no network):
+
+| Shape | Recognised when | Result |
+| --- | --- | --- |
+| Line | chord ≥ 5% page width, straight within 6% | 2 points; within 4° of level/upright snapped, start kept |
+| Circle / ellipse | closed, goes round once, fits an ellipse (mean error ≤ 7.5%) | 72-point outline, size/centre/tilt kept; circle if axes within 15% |
+| Rectangle | closed, 4 corners ~90° | sides level when within 10°, else a true tilted rectangle |
+| Triangle | closed, 3 corners | the 3 corners |
+| Arrow | one stroke: shaft, barb, back to the tip, barb | clean shaft and symmetric barbs |
+
+Anything smaller than 4.5% of the page width (handwriting), not clearly one of these, or a
+scribble stays exactly as drawn. On a note, sizes are measured against the page, so letters
+on a note stay letters. A highlighter only becomes a straight band. Undo first brings back the
+stroke as drawn, then removes it; redo the reverse. Strokes are stored in page fractions, so
+shapes stay on their spot at any zoom, rotation or after reopening.
+
 ## Home dashboard
 
 `feature/home`. Everything shown comes from data MEOW already stores; nothing is estimated or
 sample data.
 
+- Layout: a compact greeting (the cat as a small avatar beside "Merhaba", its message as one
+  line), then study first. Tablets: continue, pinned and recent on the left; the countdown in
+  the top-right, quick actions, week and notes under it. Phones: continue, quick actions,
+  countdown, pinned, recent, week, notes.
 - **Çalışmaya devam et**: the PDF with the latest `lastOpenedAt`, opened at its saved
   `lastPageIndex` (the viewer's own restore). With nothing opened yet it offers the newest import
   ("Okumaya başla"); with an empty library, "İlk PDF'ini ekle".

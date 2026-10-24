@@ -18,6 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.Switch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -66,6 +71,8 @@ class AnnotationActions(
     val onHighlightWidth: (Int) -> Unit = {},
     val onUndo: () -> Unit = {},
     val onRedo: () -> Unit = {},
+    val onFingerDraws: (Boolean) -> Unit = {},
+    val onShapeCorrection: (Boolean) -> Unit = {},
 ) {
     companion object {
         fun of(session: AnnotationSession, onUndo: () -> Unit, onRedo: () -> Unit) = AnnotationActions(
@@ -76,6 +83,8 @@ class AnnotationActions(
             onHighlightWidth = session::selectHighlightWidth,
             onUndo = onUndo,
             onRedo = onRedo,
+            onFingerDraws = session::setFingerDraws,
+            onShapeCorrection = session::setShapeCorrection,
         )
     }
 }
@@ -107,9 +116,19 @@ fun AnnotationToolsSection(state: AnnotationToolState, actions: AnnotationAction
                 }
             }
         }
+        if (state.tool == AnnotationTool.PEN || state.tool == AnnotationTool.HIGHLIGHTER) {
+            ToggleRow(
+                MeowIcons.Shapes, stringResource(R.string.annotation_shape), stringResource(R.string.annotation_shape_desc),
+                state.shapeCorrection, actions.onShapeCorrection,
+            )
+        }
         if (state.tool != null) {
+            ToggleRow(
+                MeowIcons.Finger, stringResource(R.string.annotation_finger_draws), stringResource(R.string.annotation_finger_draws_desc),
+                state.fingerDraws, actions.onFingerDraws,
+            )
             Text(
-                stringResource(R.string.annotation_two_finger_hint),
+                stringResource(if (state.fingerDraws) R.string.annotation_two_finger_hint else R.string.annotation_stylus_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
@@ -145,6 +164,13 @@ fun AnnotationToolRail(
         HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
         IconButton(onClick = actions.onUndo, enabled = state.canUndo) { Icon(MeowIcons.Undo, contentDescription = stringResource(R.string.annotation_undo)) }
         IconButton(onClick = actions.onRedo, enabled = state.canRedo) { Icon(MeowIcons.Redo, contentDescription = stringResource(R.string.annotation_redo)) }
+        if (state.tool != null) {
+            HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            RailToggle(MeowIcons.Finger, stringResource(R.string.annotation_finger_draws), state.fingerDraws, actions.onFingerDraws)
+            if (state.tool != AnnotationTool.ERASER) {
+                RailToggle(MeowIcons.Shapes, stringResource(R.string.annotation_shape), state.shapeCorrection, actions.onShapeCorrection)
+            }
+        }
         when (state.tool) {
             AnnotationTool.PEN -> {
                 HorizontalDivider(Modifier.width(32.dp).padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -161,6 +187,41 @@ fun AnnotationToolRail(
                 Column(Modifier.selectableGroup(), horizontalAlignment = Alignment.CenterHorizontally) { HighlightWidths(state, actions) }
             }
             else -> Unit
+        }
+    }
+}
+
+/** An on/off setting of the drawing tools, with a one-line explanation under it. */
+@Composable
+private fun ToggleRow(icon: ImageVector, title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = MeowTokens.TouchTarget)
+            .padding(top = 4.dp)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+/** Phones: an on/off setting as a small icon toggle on the rail. */
+@Composable
+private fun RailToggle(icon: ImageVector, label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    IconToggleButton(checked = checked, onCheckedChange = onChange, modifier = Modifier.semantics { contentDescription = label }) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .background(if (checked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, MeowTokens.ControlShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = if (checked) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

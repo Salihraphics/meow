@@ -26,6 +26,15 @@ data class AnnotationToolState(
     val highlightWidthIndex: Int = 1,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
+    /**
+     * Whether one finger draws with the pen tools. True until a stylus is used; then fingers
+     * scroll and only the stylus writes (the student can switch it back).
+     */
+    val fingerDraws: Boolean = true,
+    /** A stylus has written in this document, so the "finger draws" choice is offered. */
+    val stylusSeen: Boolean = false,
+    /** Turn finished pen strokes that clearly are lines, circles, rectangles… into clean shapes. */
+    val shapeCorrection: Boolean = false,
 ) {
     val penStyle get() = PenStyle(PEN_COLORS[colorIndex], PEN_WIDTHS[widthIndex])
 
@@ -64,6 +73,8 @@ class AnnotationSession(
     private val scope: CoroutineScope,
     /** Told about each finished pen stroke, e.g. to check whether it circles an answer. */
     private val onStrokeAdded: (Stroke) -> Unit = {},
+    /** Shared across documents in the app, so a stylus used in one PDF counts in the next. */
+    private val stylusMemory: StylusMemory = StylusMemory(),
     private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
     private val pages = HashMap<Int, MutableStateFlow<List<Stroke>?>>()
@@ -73,7 +84,12 @@ class AnnotationSession(
     private val hiddenNotes = HashMap<String, StickyNote>()
     private val history = AnnotationHistory()
 
-    private val _tools = MutableStateFlow(AnnotationToolState())
+    private val _tools = MutableStateFlow(
+        // A stylus used in an earlier document this run: fingers scroll here from the start.
+        if (stylusMemory.seen) AnnotationToolState(fingerDraws = false, stylusSeen = true) else AnnotationToolState(),
+    )
+    /** The student set "finger draws" themselves; a stylus showing up then doesn't change it. */
+    private var fingerChoiceMade = false
     val tools: StateFlow<AnnotationToolState> = _tools.asStateFlow()
 
     private val _selectedNote = MutableStateFlow<String?>(null)
@@ -111,6 +127,19 @@ class AnnotationSession(
 
     fun selectTool(tool: AnnotationTool?) = _tools.update { it.copy(tool = tool) }
 
+    /** A stylus touched the page: from now on fingers scroll and the stylus writes. */
+    fun onStylusSeen() = _tools.update {
+        stylusMemory.seen = true
+        if (it.stylusSeen) it else it.copy(stylusSeen = true, fingerDraws = if (fingerChoiceMade) it.fingerDraws else false)
+    }
+
+    fun setFingerDraws(draws: Boolean) {
+        fingerChoiceMade = true
+        _tools.update { it.copy(fingerDraws = draws) }
+    }
+
+    fun setShapeCorrection(on: Boolean) = _tools.update { it.copy(shapeCorrection = on) }
+
     fun selectColor(index: Int) = _tools.update { it.copy(colorIndex = index.coerceIn(0, AnnotationToolState.PEN_COLORS.lastIndex)) }
 
     fun selectWidth(index: Int) = _tools.update { it.copy(widthIndex = index.coerceIn(0, AnnotationToolState.PEN_WIDTHS.lastIndex)) }
@@ -126,16 +155,47 @@ class AnnotationSession(
      * fractions of the note for ink written on note [noteId] (its width then scaled by
      * [widthScale], the page's width over the note's). Only pen strokes on the page are checked
      * as answer marks; highlighting and writing on notes never record an answer.
+     *
+     * [pressures] (one per point) come from a stylus that reports pressure. With shape
+     * correction on, a stroke that clearly is a shape is replaced by the clean shape; [aspect]
+     * (height / width of the box drawn in) and [boxScale] (the box's width in page widths) let
+     * the recognizer measure it. Undo then brings back the stroke as drawn.
      */
-    fun addStroke(pageIndex: Int, points: FloatArray, tool: AnnotationTool = AnnotationTool.PEN, noteId: String? = null, widthScale: Float = 1f) {
+    fun addStroke(
+        pageIndex: Int,
+        points: FloatArray,
+        tool: AnnotationTool = AnnotationTool.PEN,
+        noteId: String? = null,
+        widthScale: Float = 1f,
+        pressures: FloatArray? = null,
+        aspect: Float = 0f,
+        boxScale: Float = 1f,
+    ) {
         if (points.size < 2) return
-        val style = _tools.value.styleFor(tool) ?: return
+        val state = _tools.value
+        val style = state.styleFor(tool) ?: return
         val kind = if (tool == AnnotationTool.HIGHLIGHTER) StrokeTool.HIGHLIGHTER else StrokeTool.PEN
-        val stroke = Stroke(newId(), documentId, pageIndex, kind, style.color, style.width * widthScale, points, noteId)
-        page(pageIndex).update { it.orEmpty() + stroke }
-        repository.add(stroke)
-        record(AnnotationEdit.Added(stroke))
-        if (kind == StrokeTool.PEN && noteId == null) onStrokeAdded(stroke)
+        val drawn = Stroke(newId(), documentId, pageIndex, kind, style.color, style.width * widthScale, points, noteId, pressures?.takeIf { it.size * 2 == points.size })
+        // A highlighter only ever becomes a straight band; every shape for the pen.
+        val shape = if (state.shapeCorrection && aspect > 0f) {
+            ShapeRecognizer.recognize(points, aspect, boxScale)?.takeIf { kind == StrokeTool.PEN || it.kind == ShapeKind.LINE }
+        } else {
+            null
+        }
+        if (shape == null) {
+            page(pageIndex).update { it.orEmpty() + drawn }
+            repository.add(drawn)
+            record(AnnotationEdit.Added(drawn))
+            if (kind == StrokeTool.PEN && noteId == null) onStrokeAdded(drawn)
+            return
+        }
+        // Clean shapes have an even line: pressure would make a circle look hand-drawn again.
+        val clean = drawn.copy(id = newId(), points = shape.points, pressures = null)
+        page(pageIndex).update { it.orEmpty() + clean }
+        repository.add(clean)
+        history.record(AnnotationEdit.Added(drawn))
+        record(AnnotationEdit.Corrected(drawn, clean))
+        if (kind == StrokeTool.PEN && noteId == null) onStrokeAdded(clean)
     }
 
     /**
@@ -193,6 +253,10 @@ class AnnotationSession(
         val edit = history.undo() ?: return null
         when (edit) {
             is AnnotationEdit.Added -> hide(edit.pageIndex, listOf(edit.stroke))
+            is AnnotationEdit.Corrected -> {
+                hide(edit.pageIndex, listOf(edit.corrected))
+                show(edit.pageIndex, listOf(edit.original))
+            }
             is AnnotationEdit.Erased -> show(edit.pageIndex, edit.strokes)
             is AnnotationEdit.NoteAdded -> hideNote(edit.note)
             is AnnotationEdit.NoteRemoved -> showNote(edit.note)
@@ -205,6 +269,10 @@ class AnnotationSession(
         val edit = history.redo() ?: return null
         when (edit) {
             is AnnotationEdit.Added -> show(edit.pageIndex, listOf(edit.stroke))
+            is AnnotationEdit.Corrected -> {
+                hide(edit.pageIndex, listOf(edit.original))
+                show(edit.pageIndex, listOf(edit.corrected))
+            }
             is AnnotationEdit.Erased -> hide(edit.pageIndex, edit.strokes)
             is AnnotationEdit.NoteAdded -> showNote(edit.note)
             is AnnotationEdit.NoteRemoved -> hideNote(edit.note)
@@ -224,6 +292,9 @@ class AnnotationSession(
             val present = list.orEmpty().map { it.id }.toSet()
             list.orEmpty() + strokes.filterNot { it.id in present }
         }
+        // A stroke replaced by its clean shape was never saved: save it first (adding one
+        // that is already stored does nothing), then lift any eraser mark.
+        strokes.forEach { repository.add(it) }
         repository.restore(strokes.map { it.id })
     }
 
@@ -252,4 +323,18 @@ class AnnotationSession(
 
     private fun notePage(pageIndex: Int): MutableStateFlow<List<StickyNote>?> =
         notePages.getOrPut(pageIndex) { MutableStateFlow(null) }
+}
+
+/**
+ * Whether a stylus has been used since the app started, so a palm resting on the next PDF never
+ * draws before the stylus touches it. Kept in memory only: the first stylus stroke after a
+ * restart turns it back on.
+ */
+class StylusMemory {
+    @Volatile var seen: Boolean = false
+
+    companion object {
+        /** The app's one memory; tests make their own. */
+        val App = StylusMemory()
+    }
 }

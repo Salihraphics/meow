@@ -190,4 +190,111 @@ class AnnotationSessionTest {
         s.undo()
         assertTrue(ink.id in repo.deleted)
     }
+
+    // ---- Stylus ---------------------------------------------------------------------------
+
+    @Test
+    fun aStylusMakesFingersScrollUnlessTheStudentChoseOtherwise() {
+        val s = session()
+        assertTrue(s.tools.value.fingerDraws)
+        s.onStylusSeen()
+        assertFalse(s.tools.value.fingerDraws)
+        assertTrue(s.tools.value.stylusSeen)
+        s.setFingerDraws(true)
+        s.onStylusSeen()
+        assertTrue("the student's choice stays", s.tools.value.fingerDraws)
+
+        val other = session("doc2")
+        other.setFingerDraws(true)
+        other.onStylusSeen()
+        assertTrue("chosen before the stylus came", other.tools.value.fingerDraws)
+    }
+
+    @Test
+    fun pressuresAreSavedWithTheStroke() {
+        val s = session()
+        s.addStroke(0, line(0.1f, 0.1f, 0.2f, 0.2f, 0.3f, 0.3f), pressures = floatArrayOf(0.2f, 0.5f, 0.9f))
+        assertTrue(repo.all.values.single().pressures!!.contentEquals(floatArrayOf(0.2f, 0.5f, 0.9f)))
+        // A list that doesn't match the points is dropped rather than misdrawn.
+        s.addStroke(0, line(0.1f, 0.1f, 0.2f, 0.2f), pressures = floatArrayOf(0.2f))
+        assertNull(repo.all.values.last().pressures)
+    }
+
+    // ---- Shape correction -----------------------------------------------------------------
+
+    /** A wobbly hand-drawn horizontal line across a third of an A4 page. */
+    private fun shakyLine(): FloatArray {
+        val n = 40
+        return FloatArray(n * 2) { i -> if (i % 2 == 0) 0.2f + 0.4f * (i / 2) / (n - 1f) else 0.5f + 0.002f * kotlin.math.sin(i * 0.7f) }
+    }
+
+    @Test
+    fun withShapeCorrectionOffEveryStrokeStaysAsDrawn() {
+        val s = session()
+        val drawn = shakyLine()
+        s.addStroke(0, drawn, aspect = 1.414f)
+        assertTrue(repo.all.values.single().points.contentEquals(drawn))
+    }
+
+    @Test
+    fun aCorrectedShapeUndoesToTheStrokeAsDrawnThenToNothing() {
+        val s = session()
+        s.setShapeCorrection(true)
+        val drawn = shakyLine()
+        s.addStroke(0, drawn, aspect = 1.414f)
+        val clean = s.strokes(0).value!!.single()
+        assertEquals(4, clean.points.size) // a straight line: two points
+        assertEquals(clean.points[1], clean.points[3])
+        assertEquals(listOf(clean.id), repo.all.keys.toList())
+
+        assertEquals(0, s.undo())
+        val back = s.strokes(0).value!!.single()
+        assertTrue("the hand-drawn stroke is back", back.points.contentEquals(drawn))
+        assertTrue("and saved", repo.all[back.id] != null && back.id !in repo.deleted)
+        assertTrue(clean.id in repo.deleted)
+
+        assertEquals(0, s.undo())
+        assertTrue(s.strokes(0).value!!.isEmpty())
+        assertFalse(s.tools.value.canUndo)
+
+        s.redo()
+        assertTrue(s.strokes(0).value!!.single().points.contentEquals(drawn))
+        s.redo()
+        assertEquals(clean.id, s.strokes(0).value!!.single().id)
+        assertFalse(clean.id in repo.deleted)
+        assertTrue(back.id in repo.deleted)
+    }
+
+    @Test
+    fun aHighlighterOnlyEverBecomesAStraightBand() {
+        val s = session()
+        s.setShapeCorrection(true)
+        s.selectTool(AnnotationTool.HIGHLIGHTER)
+        val circle = FloatArray(80) { i ->
+            val a = 2 * Math.PI * (i / 2) / 39.0 * 1.03
+            if (i % 2 == 0) (0.5 + 0.1 * kotlin.math.cos(a)).toFloat() else ((0.5 + 0.1 * kotlin.math.sin(a)) / 1.414).toFloat()
+        }
+        s.addStroke(0, circle, AnnotationTool.HIGHLIGHTER, aspect = 1.414f)
+        assertTrue("a highlighted circle stays freehand", repo.all.values.last().points.contentEquals(circle))
+        s.addStroke(0, shakyLine(), AnnotationTool.HIGHLIGHTER, aspect = 1.414f)
+        assertEquals(4, repo.all.values.last().points.size)
+    }
+
+    @Test
+    fun aCorrectedStrokeLosesItsPressureSoTheShapeLooksEven() {
+        val s = session()
+        s.setShapeCorrection(true)
+        s.addStroke(0, shakyLine(), pressures = FloatArray(40) { 0.2f + it / 60f }, aspect = 1.414f)
+        assertNull(s.strokes(0).value!!.single().pressures)
+    }
+
+    @Test
+    fun answerMarksSeeTheShapeThatStays() {
+        val seen = mutableListOf<Stroke>()
+        val s = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined), onStrokeAdded = { seen += it }) { "s${ids++}" }
+        s.setShapeCorrection(true)
+        s.addStroke(0, shakyLine(), aspect = 1.414f)
+        assertEquals(1, seen.size)
+        assertEquals(4, seen.single().points.size)
+    }
 }

@@ -11,6 +11,14 @@ sealed interface AnnotationEdit {
         override val pageIndex get() = stroke.pageIndex
     }
 
+    /**
+     * Shape correction swapped the stroke as drawn ([original], recorded just before as
+     * [Added]) for a clean shape. Undo brings the hand-drawn stroke back; undo again removes it.
+     */
+    data class Corrected(val original: Stroke, val corrected: Stroke) : AnnotationEdit {
+        override val pageIndex get() = original.pageIndex
+    }
+
     /** One eraser gesture, which may remove several strokes on one page. */
     data class Erased(override val pageIndex: Int, val strokes: List<Stroke>) : AnnotationEdit
 

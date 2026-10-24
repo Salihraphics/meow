@@ -8,6 +8,7 @@ import com.salihraphics.meow.data.library.PdfLibraryRepository
 import com.salihraphics.meow.data.pdf.PdfRenderSession
 import com.salihraphics.meow.data.pdf.PdfRenderSessionFactory
 import com.salihraphics.meow.domain.model.PdfDocument
+import com.salihraphics.meow.feature.annotation.StylusMemory
 import com.salihraphics.meow.feature.annotation.AnnotationSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -88,7 +89,7 @@ class PdfViewerViewModel(
     /** Strokes, tool and undo history; here so rotation keeps them. */
     // Answers are kept apart from drawings: erasing or undoing a circle leaves its answer saved.
     // An answer changes by circling another option, "Geri al" on its note, or the answer sheet.
-    private val annotations = AnnotationSession(documentId, annotationRepository, viewModelScope, onStrokeAdded = ::onStrokeAdded)
+    private val annotations = AnnotationSession(documentId, annotationRepository, viewModelScope, onStrokeAdded = ::onStrokeAdded, stylusMemory = StylusMemory.App)
 
     private val immediateFeedback: StateFlow<Boolean> = immediateFeedbackSetting.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 

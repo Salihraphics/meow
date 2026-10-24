@@ -17,13 +17,19 @@ data class Stroke(
     val points: FloatArray,
     /** Set when the stroke was written on a sticky note: it moves and resizes with the note. */
     val noteId: String? = null,
+    /**
+     * Stylus pressure per point (0..1), when the stylus reported a changing pressure; the line
+     * is then thicker where pressed harder. Null (fingers, or a stylus without pressure) draws
+     * the same width all along.
+     */
+    val pressures: FloatArray? = null,
 ) {
     val pointCount: Int get() = points.size / 2
 
     override fun equals(other: Any?): Boolean =
         other is Stroke && other.id == id && other.documentId == documentId && other.pageIndex == pageIndex &&
             other.tool == tool && other.color == color && other.width == width && other.points.contentEquals(points) &&
-            other.noteId == noteId
+            other.noteId == noteId && other.pressures.contentEquals(pressures)
 
     override fun hashCode(): Int = id.hashCode()
 }

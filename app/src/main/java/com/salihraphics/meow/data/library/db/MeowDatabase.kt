@@ -34,15 +34,17 @@ import com.salihraphics.meow.data.study.StudyTimerEntity
         StudySessionEntity::class,
         LibraryFolderEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
     // v2 adds annotation_strokes; v3 adds answer keys and attempts; v4 adds solving sessions,
     // separate key PDFs and search clues; v5 records where each found answer was read; v6 adds
     // sticky notes, the viewer rotation per PDF and the study timer; v7 lets ink be written on a
-    // note; v8 adds library folders and pinned documents. Existing data is kept.
+    // note; v8 adds library folders and pinned documents; v9 stores stylus pressure per stroke
+    // point. Existing data is kept.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8),
+        AutoMigration(from = 8, to = 9),
     ],
 )
 abstract class MeowDatabase : RoomDatabase() {

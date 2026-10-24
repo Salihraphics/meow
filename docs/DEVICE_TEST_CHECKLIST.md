@@ -1,4 +1,4 @@
-# Device test checklist: answer marking, keys, dashboard and library
+# Device test checklist: viewer, stylus, answer marking, keys, dashboard and library
 
 These flows have JVM tests (Robolectric), but Android's PDF renderer, ML Kit OCR, the pen on a
 real screen and real books can only be checked on a device. Use a book with an answer key (the
@@ -6,6 +6,32 @@ real screen and real books can only be checked on a device. Use a book with an a
 
 Install: `adb install -r MEOW-…-arm64.apk` (or the universal APK). Existing library, drawings and
 keys must still be there after updating.
+
+## 0. Scrolling, zoom and stylus (this update; test first)
+Use a long PDF (300+ pages) and one with landscape and portrait pages mixed.
+- [ ] Slow and fast scrolling, flings, stopping a fling with a tap: the page never jumps to
+      another page; no shaking while scrolling.
+- [ ] Two quick taps to stop scrolling don't zoom. A deliberate double-tap zooms to 200%
+      around the tap, and back.
+- [ ] Pinch in and out at different places (top, bottom, near a page break, at 50%): the
+      spot between the fingers stays under them; no jump or jolt when the fingers lift.
+- [ ] Two fingers moving together pan the page; zoom then scroll; scroll sideways at 200%+.
+- [ ] Hold the tablet with a thumb resting on the screen edge and scroll with the other hand:
+      it scrolls and never zooms.
+- [ ] Rotate the device and rotate the page (90°) while zoomed; close and reopen the PDF: same
+      place, ink and notes on the same printed spots.
+- [ ] Stylus: write several lines with the palm resting on the screen: every stroke appears,
+      the page doesn't move, the palm leaves no mark. Note whether the device reports pressure
+      (lines thicker when pressed): record the stylus model either way.
+- [ ] After the stylus has written once, one finger scrolls (even with the pen tool). "Parmakla
+      çiz" on: the finger writes again. A two-finger pinch while writing leaves no ink.
+- [ ] Stylus eraser end (if it has one) erases with the pen tool selected.
+- [ ] Diagonal lines and circles look smooth at 100% and 300%; ink appears right under the tip.
+- [ ] "Şekil düzelt" on: a shaky straight line, a circle, an oval, a rectangle, a triangle, a
+      one-stroke arrow become clean shapes on the same spot; normal handwriting (letters, "o",
+      "e", loops), ticks and scribbles stay as written. Undo brings back the hand-drawn stroke,
+      undo again removes it. Off: everything stays freehand.
+- [ ] Write on a sticky note with the stylus, with and without shape correction.
 
 ## 1. Answers go to the right question (the reported bug)
 - [ ] Open a page with 4 questions (two columns). Choose the pen. Circle **C in question 4**.
@@ -131,6 +157,8 @@ keys must still be there after updating.
       panel, dialogs and home.
 
 ## 6a. Home dashboard
+- [ ] Tablet: "Çalışmaya devam et", pinned and recent visible without scrolling; the
+      countdown top-right; the cat is a small avatar beside the greeting (tap: it reacts).
 - [ ] Fresh install: Home shows "İlk PDF'ini ekle", "Sınav hedefi" and "Henüz kayıtlı çalışma
       yok"; no numbers that you didn't create.
 - [ ] "PDF ekle" (card or quick action) opens the library and the system picker straight away;
