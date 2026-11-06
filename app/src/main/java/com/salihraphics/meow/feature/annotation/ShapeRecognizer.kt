@@ -36,9 +36,15 @@ object ShapeRecognizer {
     private class P(val x: Float, val y: Float)
 
     fun recognize(points: FloatArray, aspect: Float, boxScale: Float = 1f): RecognizedShape? {
-        if (points.size < 8 || aspect <= 0f) return null
-        // Square units: x in box widths, y in box widths too.
-        val pts = List(points.size / 2) { P(points[2 * it], points[2 * it + 1] * aspect) }
+        if (points.size < 8 || !(aspect > 0f) || !aspect.isFinite() || !(boxScale > 0f)) return null
+        if (points.any { !it.isFinite() }) return null
+        // Square units: x in box widths, y in box widths too. A long stroke is thinned to at most
+        // MAX_POINTS evenly spread samples: the outline is the same, the work bounded.
+        val n = points.size / 2
+        val step = ((n + MAX_POINTS - 1) / MAX_POINTS).coerceAtLeast(1)
+        val pts = (0 until n step step).map { P(points[2 * it], points[2 * it + 1] * aspect) }.let { thinned ->
+            if ((n - 1) % step == 0) thinned else thinned + P(points[2 * (n - 1)], points[2 * (n - 1) + 1] * aspect)
+        }
         val length = pathLength(pts)
         val minX = pts.minOf { it.x }; val maxX = pts.maxOf { it.x }
         val minY = pts.minOf { it.y }; val maxY = pts.maxOf { it.y }
@@ -244,19 +250,29 @@ object ShapeRecognizer {
         )
     }
 
-    /** Ramer–Douglas–Peucker on an open path. */
+    /** Ramer–Douglas–Peucker on an open path; iterative, so a long stroke can't overflow the stack. */
     private fun simplifyOpen(pts: List<P>, epsilon: Float): List<P> {
         if (pts.size < 3) return pts
-        var worst = 0f
-        var index = 0
-        for (i in 1 until pts.lastIndex) {
-            val d = distToSegment(pts[i], pts.first(), pts.last())
-            if (d > worst) { worst = d; index = i }
+        val keep = BooleanArray(pts.size)
+        keep[0] = true
+        keep[pts.lastIndex] = true
+        val stack = ArrayDeque<Pair<Int, Int>>()
+        stack.addLast(0 to pts.lastIndex)
+        while (stack.isNotEmpty()) {
+            val (from, to) = stack.removeLast()
+            var worst = 0f
+            var index = -1
+            for (i in from + 1 until to) {
+                val d = distToSegment(pts[i], pts[from], pts[to])
+                if (d > worst) { worst = d; index = i }
+            }
+            if (index >= 0 && worst > epsilon) {
+                keep[index] = true
+                stack.addLast(from to index)
+                stack.addLast(index to to)
+            }
         }
-        if (worst <= epsilon) return listOf(pts.first(), pts.last())
-        val left = simplifyOpen(pts.subList(0, index + 1), epsilon)
-        val right = simplifyOpen(pts.subList(index, pts.size), epsilon)
-        return left.dropLast(1) + right
+        return pts.filterIndexed { i, _ -> keep[i] }
     }
 
     /** RDP on a closed outline: split at the point farthest from the start, then simplify both halves. */
@@ -301,6 +317,7 @@ object ShapeRecognizer {
     }
 
     private const val SNAP_DEGREES = 4.0
+    private const val MAX_POINTS = 400
     private const val ELLIPSE_POINTS = 72
     private const val EDGE_STEP = 0.004f
 }

@@ -56,9 +56,11 @@ data class StickyNote(
 ) {
     /** Kept inside the page and no smaller than [MIN_SIZE]. */
     fun clamped(): StickyNote {
-        val w = width.coerceIn(MIN_SIZE, 1f)
-        val h = height.coerceIn(MIN_SIZE, 1f)
-        return copy(x = x.coerceIn(0f, 1f - w), y = y.coerceIn(0f, 1f - h), width = w, height = h)
+        // An unreadable value (NaN, infinite) becomes the default rather than a crash on screen.
+        fun Float.or(default: Float) = if (isFinite()) this else default
+        val w = width.or(DEFAULT_WIDTH).coerceIn(MIN_SIZE, 1f)
+        val h = height.or(DEFAULT_HEIGHT).coerceIn(MIN_SIZE, 1f)
+        return copy(x = x.or(0.1f).coerceIn(0f, 1f - w), y = y.or(0.1f).coerceIn(0f, 1f - h), width = w, height = h)
     }
 
     companion object {

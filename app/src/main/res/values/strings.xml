@@ -574,4 +574,10 @@
     <string name="exam_setting_value_none">Seçilmedi</string>
     <string name="exam_setting_value_off">%1$s · kapalı</string>
     <string name="action_next">İleri</string>
+    <string name="settings_crash_logs">Hata kayıtları</string>
+    <string name="settings_crash_logs_none">Kayıt yok. Uygulama çökerse ya da donarsa burada görünür.</string>
+    <string name="settings_crash_logs_count">%1$d kayıt · yalnızca bu cihazda; paylaşmak sana kalmış</string>
+    <string name="settings_crash_logs_share">Paylaş</string>
+    <string name="settings_crash_logs_clear">Temizle</string>
+    <string name="action_close">Kapat</string>
 </resources>

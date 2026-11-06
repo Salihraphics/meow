@@ -2,7 +2,6 @@ package com.salihraphics.meow.feature.viewer
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.ScrollableDefaults
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.layout.layout
@@ -92,9 +91,22 @@ data class ViewportSnapshot(
     val horizontalFraction: Float = 0f,
 )
 
+/** Unreadable values (NaN, infinite, out of range) become the defaults instead of crashing a restore. */
+fun ViewportSnapshot.sanitized(): ViewportSnapshot {
+    fun Float.fraction() = if (isFinite()) coerceIn(0f, 1f) else 0f
+    return ViewportSnapshot(
+        pageIndex = pageIndex.coerceAtLeast(0),
+        pageOffsetFraction = pageOffsetFraction.fraction(),
+        zoom = if (zoom.isFinite()) zoom.coerceIn(PdfViewportState.MIN_ZOOM, PdfViewportState.MAX_ZOOM) else 1f,
+        horizontalFraction = horizontalFraction.fraction(),
+    )
+}
+
 /** Scroll position, zoom and current page of a PDF being read. */
 @Stable
-class PdfViewportState(initial: ViewportSnapshot) {
+class PdfViewportState(saved: ViewportSnapshot) {
+    /** A saved position with anything unreadable (NaN, out of range) replaced by a sane value. */
+    private val initial = saved.sanitized()
     val list = LazyListState(firstVisibleItemIndex = initial.pageIndex.coerceAtLeast(0))
     val horizontal = ScrollState(0)
 
@@ -202,6 +214,7 @@ class PdfViewportState(initial: ViewportSnapshot) {
      * sizes) and the sideways scroll (shown through [pending] until the scroll catches up).
      */
     fun commitZoom(target: Float, from: Offset, to: Offset = from) {
+        if (!target.isFinite() || !from.finite() || !to.finite()) return
         val newZoom = target.coerceIn(MIN_ZOOM, MAX_ZOOM)
         val old = layoutAt(zoom)
         val new = layoutAt(newZoom)
@@ -214,14 +227,15 @@ class PdfViewportState(initial: ViewportSnapshot) {
     }
 
     private fun moveTo(layout: PdfLayout, newZoom: Float, scroll: ScrollPosition) {
+        if (!scroll.x.isFinite() || !scroll.y.isFinite()) return
         val (index, offset) = layout.listPosition(scroll.y.roundToInt())
-        Snapshot.withMutableSnapshot {
-            previewScale = 1f
-            previewTranslation = Offset.Zero
-            zoom = newZoom
-            pending = scroll
-            list.requestScrollToItem(index, offset)
-        }
+        // All before the next frame, in this order; the list applies the position when it is
+        // next measured, with the new page sizes.
+        previewScale = 1f
+        previewTranslation = Offset.Zero
+        zoom = newZoom
+        pending = scroll
+        list.requestScrollToItem(index, offset)
     }
 
     /** Zooms keeping the content under [pivot] (viewport coordinates) in place. */
@@ -241,6 +255,7 @@ class PdfViewportState(initial: ViewportSnapshot) {
 
     /** Folds one step of a pinch/pan into the preview, keeping the result inside the zoom limits. */
     internal fun previewBy(step: TouchAction.Transform) {
+        if (!step.zoom.isFinite() || step.zoom <= 0f || !step.from.finite() || !step.to.finite()) return
         val wanted = previewScale * step.zoom
         val scale = (zoom * wanted).coerceIn(MIN_ZOOM, MAX_ZOOM) / zoom
         val factor = scale / previewScale
@@ -446,12 +461,14 @@ fun PdfPagesView(
                 items(count = loader.pageCount, key = { it }) { index ->
                     // A quarter-turned page is laid out on its side: its own width is the shown height.
                     val ownWidth = if (PageRotation.isQuarterTurn(turn)) layout.pageHeight(index).toFloat() else layout.pageWidth.toFloat()
-                    PdfPage(index, loader, renderWidthFor(ownWidth), turn, Modifier.exactSize(layout.pageWidth, layout.pageHeight(index)), pageOverlay)
+                    PdfPage(index, loader, renderWidthFor(ownWidth, loader.aspectRatio(index)), turn, Modifier.exactSize(layout.pageWidth, layout.pageHeight(index)), pageOverlay)
                 }
             }
         }
     }
 }
+
+private fun Offset.finite() = x.isFinite() && y.isFinite()
 
 /** A tap within this long after one that stopped a fling never completes a double-tap. */
 private const val DOUBLE_TAP_BLOCK_MS = 600L

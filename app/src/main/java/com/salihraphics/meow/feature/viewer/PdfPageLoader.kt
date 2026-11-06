@@ -4,6 +4,7 @@ import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.salihraphics.meow.data.pdf.PdfRenderSession
+import kotlin.math.sqrt
 
 /** What the page list needs: page shapes, and a way to get a page's pixels at a given width. */
 interface PdfPageLoader {
@@ -53,12 +54,19 @@ class SessionPageLoader(
 
 /**
  * Pixel width to render at: the on-screen width, rounded up to a 128px step so small layout
- * changes reuse cached pages, and capped so one page bitmap stays around 24 MB at most.
+ * changes reuse cached pages, capped at [MAX_RENDER_WIDTH_PX], and narrower still for tall
+ * pages so one page bitmap never exceeds [MAX_RENDER_PIXELS] (about 24 MB). [pageAspect] is
+ * the rendered (unturned) page's width / height.
  */
-fun renderWidthFor(displayWidthPx: Float): Int {
+fun renderWidthFor(displayWidthPx: Float, pageAspect: Float = DEFAULT_ASPECT): Int {
     val step = 128
-    val rounded = ((displayWidthPx / step).toInt() + 1) * step
-    return rounded.coerceIn(step, MAX_RENDER_WIDTH_PX)
+    val wanted = if (displayWidthPx.isFinite()) displayWidthPx else step.toFloat()
+    val rounded = ((wanted / step).toInt() + 1) * step
+    val aspect = safeAspect(pageAspect)
+    // width × (width / aspect) ≤ budget
+    val budgetWidth = sqrt(MAX_RENDER_PIXELS * aspect).toInt()
+    return rounded.coerceAtMost(MAX_RENDER_WIDTH_PX).coerceAtMost(budgetWidth).coerceAtLeast(16)
 }
 
 const val MAX_RENDER_WIDTH_PX = 2048
+const val MAX_RENDER_PIXELS = 2048 * 2900

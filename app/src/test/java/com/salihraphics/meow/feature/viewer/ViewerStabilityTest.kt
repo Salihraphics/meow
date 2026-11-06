@@ -60,7 +60,7 @@ class ViewerStabilityTest {
     private lateinit var scope: CoroutineScope
     private val repo = FakeAnnotationRepository()
     private var ids = 0
-    private val session = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined)) { "s${ids++}" }
+    private val session = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined), compute = Dispatchers.Unconfined) { "s${ids++}" }
 
     private fun show(start: ViewportSnapshot = ViewportSnapshot(3), rotation: Int = 0) {
         rule.setContent {
@@ -430,5 +430,103 @@ class ViewerStabilityTest {
         val original = session.strokes(spotA.page).value!!.single()
         assertTrue("undo brings back the hand-drawn line", original.points.size > 4)
         assertEquals(spotA.x, original.points[0], 0.003f)
+    }
+
+    // ---- Coordinate pipeline after the page changes size (P0 reproduction) ------------------
+
+    /** Draws a short stylus line at [a]→[b] and checks it is stored at the document spots under the pen. */
+    private fun drawAndCheck(a: Offset, b: Offset, start: Long, what: String) {
+        val spotA = spotAt(a)
+        val spotB = spotAt(b)
+        val before = repo.all.size
+        raw.stylusLine(a.x, a.y, b.x, b.y, start = start)
+        rule.waitForIdle()
+        assertEquals("$what: one new stroke", before + 1, repo.all.size)
+        val stroke = repo.all.values.last()
+        assertEquals("$what page", spotA.page, stroke.pageIndex)
+        assertEquals("$what start x", spotA.x, stroke.points[0], 0.003f)
+        assertEquals("$what start y", spotA.y, stroke.points[1], 0.003f)
+        assertEquals("$what end x", spotB.x, stroke.points[stroke.points.size - 2], 0.003f)
+        assertEquals("$what end y", spotB.y, stroke.points[stroke.points.size - 1], 0.003f)
+    }
+
+    /** Two points well inside the page under the middle of the screen, and on screen. */
+    private fun pointsOnAPage(fx: Float = 0.3f): Pair<Offset, Offset> {
+        val p = spotAt(Offset(400f, 600f)).page
+        val r = page(p)
+        val top = maxOf(r.top, 0f); val bottom = minOf(r.bottom, 1200f)
+        val left = maxOf(r.left, 0f); val right = minOf(r.right, 800f)
+        val y = top + (bottom - top) * 0.4f
+        return Offset(left + (right - left) * fx, y) to Offset(left + (right - left) * (fx + 0.25f), y + (bottom - top) * 0.1f)
+    }
+
+    @Test
+    fun everyStrokeLandsUnderThePenAt50_100_200_And400PercentWithPanning() {
+        show(ViewportSnapshot(4, pageOffsetFraction = 0.2f))
+        session.selectTool(AnnotationTool.PEN)
+        rule.waitForIdle()
+        var t = 1_000L
+        drawAndCheck(Offset(300f, 500f), Offset(420f, 540f), t, "100%")
+        for ((zoom, focus) in listOf(0.5f to Offset(400f, 600f), 2f to Offset(300f, 400f), 4f to Offset(500f, 700f), 1f to Offset(400f, 600f))) {
+            t += 1_000
+            scope.launch { state.zoomTo(zoom, focus) }
+            rule.waitForIdle()
+            val (a, b) = pointsOnAPage()
+            drawAndCheck(a, b, t, "${(zoom * 100).toInt()}%")
+            // Pan, then draw again.
+            t += 1_000
+            rule.onRoot().performTouchInput { swipe(Offset(600f, 1000f), Offset(560f, 800f), 300) } // a finger scrolls (stylus mode)
+            rule.waitForIdle()
+            val (c, d) = pointsOnAPage(0.45f)
+            drawAndCheck(c, d, t, "${(zoom * 100).toInt()}% after panning")
+        }
+    }
+
+    @Test
+    fun theEraserHitsTheStrokeUnderItAfterAZoom() {
+        show(ViewportSnapshot(4, pageOffsetFraction = 0.2f))
+        session.selectTool(AnnotationTool.PEN)
+        rule.waitForIdle()
+        raw.stylusLine(200f, 500f, 500f, 500f, start = 1_000)
+        rule.waitForIdle()
+        val id = repo.all.keys.single()
+        val spot = spotAt(Offset(350f, 500f))
+        session.selectTool(AnnotationTool.ERASER)
+        rule.waitForIdle()
+        scope.launch { state.zoomTo(2.5f, Offset(350f, 500f)) }
+        rule.waitForIdle()
+        val at = screenOf(spot)
+        raw.stylusLine(at.x - 5f, at.y - 3f, at.x + 5f, at.y + 3f, start = 3_000)
+        rule.waitForIdle()
+        assertTrue("erased the stroke under the eraser", id in repo.deleted)
+    }
+
+    @Test
+    fun strokesLandUnderThePenAfterThePageIsTurned() {
+        val turnState = androidx.compose.runtime.mutableIntStateOf(0)
+        rule.setContent {
+            scope = rememberCoroutineScope()
+            state = rememberPdfViewportState("doc", { ViewportSnapshot(4, pageOffsetFraction = 0.1f) }, {})
+            val tools by session.tools.collectAsState()
+            Box(Modifier.size(800.dp, 1200.dp)) {
+                PdfPagesView(Loader(), state, Modifier.size(800.dp, 1200.dp), drawingActive = tools.tool != null, fingerDraws = tools.fingerDraws, rotation = turnState.intValue) { page ->
+                    PageAnnotationLayer(page, session, tools)
+                }
+            }
+        }
+        session.selectTool(AnnotationTool.PEN)
+        rule.waitForIdle()
+        raw.stylusLine(300f, 500f, 400f, 520f, start = 1_000)
+        rule.waitForIdle()
+        turnState.intValue = 90
+        rule.waitForIdle()
+        // On a turned page the stored fractions are of the unturned page; check through the turn.
+        val r = page(spotAt(Offset(300f, 500f)).page)
+        raw.stylusLine(300f, 500f, 400f, 520f, start = 3_000)
+        rule.waitForIdle()
+        val stroke = repo.all.values.last()
+        val shown = PageRotation.toShown(Offset(stroke.points[0], stroke.points[1]), r.width, r.height, 90)
+        assertEquals("x", 300f, r.left + shown.x, 3f)
+        assertEquals("y", 500f, r.top + shown.y, 3f)
     }
 }

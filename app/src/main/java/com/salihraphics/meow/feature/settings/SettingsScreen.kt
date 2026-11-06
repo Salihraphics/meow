@@ -24,6 +24,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.remember
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import com.salihraphics.meow.MeowApplication
+import com.salihraphics.meow.core.diagnostics.CrashLog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,6 +84,9 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
     val notSet = stringResource(R.string.settings_not_set)
 
     val account by viewModel.account.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val crashLog = (context.applicationContext as? MeowApplication)?.crashLog
+    var showingLogs by rememberSaveable { mutableStateOf(false) }
     val twoColumns = LocalMeowWindow.current.width == WidthClass.Expanded
 
     // Sections are defined once and arranged in one column (phones, portrait tablets) or two.
@@ -146,6 +155,13 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
                         stringResource(R.string.settings_reset_all),
                         stringResource(R.string.settings_reset_all_desc),
                     ) { editor = Editor.RESET }
+                    crashLog?.let { log ->
+                        val count = remember(showingLogs) { log.entries().size }
+                        ActionRow(
+                            stringResource(R.string.settings_crash_logs),
+                            if (count == 0) stringResource(R.string.settings_crash_logs_none) else stringResource(R.string.settings_crash_logs_count, count),
+                        ) { showingLogs = true }
+                    }
                     Text(
                         stringResource(R.string.settings_privacy_note),
                         style = MaterialTheme.typography.bodySmall,
@@ -190,6 +206,10 @@ fun SettingsRoute(viewModel: SettingsViewModel, onBack: () -> Unit, onRestartOnb
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
             )
         }
+    }
+
+    if (showingLogs && crashLog != null) {
+        CrashLogDialog(crashLog, onDismiss = { showingLogs = false })
     }
 
     when (editor) {
@@ -410,5 +430,48 @@ private fun NameDialog(initial: String, onDismiss: () -> Unit, onSave: (String) 
         text = { NameField(value, { value = it }, onDone = { onSave(value) }) },
         confirmButton = { TextButton(onClick = { onSave(value) }) { Text(stringResource(R.string.action_save)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/** The newest crash or freeze record, to share (the student chooses where) or clear. */
+@Composable
+private fun CrashLogDialog(log: CrashLog, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val entries = remember { log.entries() }
+    val text = remember(entries) { entries.firstOrNull()?.let { runCatching { it.readText() }.getOrNull() } }
+    val shareTitle = stringResource(R.string.settings_crash_logs_share)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_crash_logs)) },
+        text = {
+            if (text == null) {
+                Text(stringResource(R.string.settings_crash_logs_none))
+            } else {
+                Text(
+                    text.take(6_000),
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                )
+            }
+        },
+        confirmButton = {
+            if (entries.isNotEmpty()) {
+                TextButton(onClick = {
+                    // Every record, as plain text, to whatever the student picks (mail, chat…).
+                    val all = entries.joinToString("\n\n----------\n\n") { runCatching { it.readText() }.getOrDefault("") }
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, all)
+                    context.startActivity(Intent.createChooser(send, shareTitle))
+                }) { Text(shareTitle) }
+            }
+        },
+        dismissButton = {
+            Row {
+                if (entries.isNotEmpty()) {
+                    TextButton(onClick = { log.clear(); onDismiss() }) { Text(stringResource(R.string.settings_crash_logs_clear)) }
+                }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            }
+        },
     )
 }

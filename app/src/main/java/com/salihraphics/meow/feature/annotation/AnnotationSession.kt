@@ -4,7 +4,12 @@ import com.salihraphics.meow.data.annotation.AnnotationRepository
 import com.salihraphics.meow.domain.model.StickyNote
 import com.salihraphics.meow.domain.model.Stroke
 import com.salihraphics.meow.domain.model.StrokeTool
+import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +80,8 @@ class AnnotationSession(
     private val onStrokeAdded: (Stroke) -> Unit = {},
     /** Shared across documents in the app, so a stylus used in one PDF counts in the next. */
     private val stylusMemory: StylusMemory = StylusMemory(),
+    /** Where shape recognition runs: never the UI thread. Tests pass an immediate one. */
+    private val compute: CoroutineDispatcher = Dispatchers.Default,
     private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
     private val pages = HashMap<Int, MutableStateFlow<List<Stroke>?>>()
@@ -171,31 +178,60 @@ class AnnotationSession(
         aspect: Float = 0f,
         boxScale: Float = 1f,
     ) {
-        if (points.size < 2) return
+        // Never store or draw what isn't a real position (a box measured at zero, for one).
+        if (points.size < 2 || points.any { !it.isFinite() }) return
         val state = _tools.value
         val style = state.styleFor(tool) ?: return
         val kind = if (tool == AnnotationTool.HIGHLIGHTER) StrokeTool.HIGHLIGHTER else StrokeTool.PEN
-        val drawn = Stroke(newId(), documentId, pageIndex, kind, style.color, style.width * widthScale, points, noteId, pressures?.takeIf { it.size * 2 == points.size })
-        // A highlighter only ever becomes a straight band; every shape for the pen.
-        val shape = if (state.shapeCorrection && aspect > 0f) {
-            ShapeRecognizer.recognize(points, aspect, boxScale)?.takeIf { kind == StrokeTool.PEN || it.kind == ShapeKind.LINE }
-        } else {
-            null
+        val cleanPressures = pressures?.takeIf { p -> p.size * 2 == points.size && p.all { it.isFinite() } }
+        val drawn = Stroke(newId(), documentId, pageIndex, kind, style.color, style.width * widthScale, points, noteId, cleanPressures)
+        if (!state.shapeCorrection || !(aspect > 0f) || !aspect.isFinite()) {
+            keep(drawn)
+            return
         }
+        // Shown at once as drawn; the shape check runs off the UI thread, then the stroke is
+        // saved as drawn or as its clean shape. Closing the screen meanwhile saves it as drawn.
+        page(pageIndex).update { it.orEmpty() + drawn }
+        scope.launch {
+            var shape: RecognizedShape? = null
+            try {
+                shape = withContext(compute) { ShapeRecognizer.recognize(points, aspect, boxScale) }
+                    // A highlighter only ever becomes a straight band; every shape for the pen.
+                    ?.takeIf { kind == StrokeTool.PEN || it.kind == ShapeKind.LINE }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RuntimeException) {
+                // A recognizer failure must never cost the stroke: keep it as drawn.
+                Log.w("MeowAnnotations", "Shape check failed; stroke kept as drawn", e)
+            } finally {
+                settle(drawn, shape)
+            }
+        }
+    }
+
+    /** A finished stroke saved as drawn. */
+    private fun keep(drawn: Stroke) {
+        page(drawn.pageIndex).update { list -> if (list.orEmpty().any { it.id == drawn.id }) list else list.orEmpty() + drawn }
+        repository.add(drawn)
+        record(AnnotationEdit.Added(drawn))
+        if (drawn.tool == StrokeTool.PEN && drawn.noteId == null) onStrokeAdded(drawn)
+    }
+
+    /** The shape check is done: save [drawn] as drawn, or replace it with the clean [shape]. */
+    private fun settle(drawn: Stroke, shape: RecognizedShape?) {
+        // Erased (or undone) while being checked: nothing to save.
+        if (page(drawn.pageIndex).value.orEmpty().none { it.id == drawn.id }) return
         if (shape == null) {
-            page(pageIndex).update { it.orEmpty() + drawn }
-            repository.add(drawn)
-            record(AnnotationEdit.Added(drawn))
-            if (kind == StrokeTool.PEN && noteId == null) onStrokeAdded(drawn)
+            keep(drawn)
             return
         }
         // Clean shapes have an even line: pressure would make a circle look hand-drawn again.
         val clean = drawn.copy(id = newId(), points = shape.points, pressures = null)
-        page(pageIndex).update { it.orEmpty() + clean }
+        page(drawn.pageIndex).update { list -> list.orEmpty().map { if (it.id == drawn.id) clean else it } }
         repository.add(clean)
         history.record(AnnotationEdit.Added(drawn))
         record(AnnotationEdit.Corrected(drawn, clean))
-        if (kind == StrokeTool.PEN && noteId == null) onStrokeAdded(clean)
+        if (clean.tool == StrokeTool.PEN && clean.noteId == null) onStrokeAdded(clean)
     }
 
     /**

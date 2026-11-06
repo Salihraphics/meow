@@ -68,8 +68,10 @@ fun PageAnnotationLayer(
 ) {
     val strokes by remember(pageIndex) { session.strokes(pageIndex) }.collectAsState()
     LaunchedEffect(pageIndex) { session.load(pageIndex) }
+    // The same list instance until the strokes change, so the ink layer isn't rebuilt needlessly.
+    val pageInk = remember(strokes) { strokes?.filter { it.noteId == null } }
     InkCanvas(
-        strokes = strokes?.filter { it.noteId == null },
+        strokes = pageInk,
         tools = tools,
         onDraw = { ink -> session.addStroke(pageIndex, ink.points, ink.tool, pressures = ink.pressures, aspect = ink.aspect) },
         onErase = { ids -> session.erase(pageIndex, ids) },
@@ -117,6 +119,7 @@ fun InkCanvas(
     val tool = tools.tool
 
     val latestFingerDraws by rememberUpdatedState(tools.fingerDraws)
+    val pathCache = remember { InkPathCache() }
 
     // Keyed on the tool only: "finger draws" turning off when the stylus is first seen must not
     // restart the gesture and lose that first stroke.
@@ -130,12 +133,13 @@ fun InkCanvas(
                 var mode: AnnotationTool = tool
                 var lastPressure = 1f
                 var noMoreFingerInk = false
-                val w = size.width.toFloat()
-                val h = size.height.toFloat()
-                val aspect = h / w
-                // Keep a point about every screen pixel and a half: fine enough for smooth
-                // curves at any zoom, without thousands of points for a long line.
-                val spacing = (1.5f / w).coerceAtMost(StrokeGeometry.MIN_POINT_SPACING)
+                // The box's size when the pen touches down, never earlier: between two strokes
+                // the page can be zoomed, turned or a note resized, and a size read before that
+                // put the next stroke somewhere else than under the pen.
+                var w = 0f
+                var h = 0f
+                var aspect = 1f
+                var spacing = StrokeGeometry.MIN_POINT_SPACING
 
                 fun touch(position: Offset, pressure: Float) {
                     when (mode) {
@@ -177,8 +181,16 @@ fun InkCanvas(
                     clear()
                 }
 
-                fun start(change: PointerInputChange) {
+                fun start(change: PointerInputChange): Boolean {
                     clear()
+                    w = size.width.toFloat()
+                    h = size.height.toFloat()
+                    // Not laid out (or collapsed): nothing sensible to draw on.
+                    if (w < 1f || h < 1f) return false
+                    aspect = h / w
+                    // Keep a point about every screen pixel and a half: fine enough for smooth
+                    // curves at any zoom, without thousands of points for a long line.
+                    spacing = (1.5f / w).coerceAtMost(StrokeGeometry.MIN_POINT_SPACING)
                     owner = change.id
                     ownerIsStylus = DrawingInputPolicy.isStylus(change.type)
                     // The eraser end of a stylus erases whatever tool is selected.
@@ -187,6 +199,7 @@ fun InkCanvas(
                     lastPressure = change.pressure
                     touch(change.position, change.pressure)
                     change.consume()
+                    return true
                 }
 
                 do {
@@ -241,20 +254,20 @@ fun InkCanvas(
     }
 
     Box(modifier.fillMaxSize().then(input)) {
-        // Finished ink: cached, redrawn only when the strokes or the size change.
-        Spacer(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer()
-                .drawWithCache {
-                    val hidden = erasing
-                    val prepared = strokes.orEmpty()
-                        .filter { it.id !in hidden }
-                        .sortedBy { if (it.tool == StrokeTool.HIGHLIGHTER) 0 else 1 } // highlights under the ink
-                        .map { InkRenderer.prepare(it.points, it.pressures, Color(it.color), it.width, size, it.tool == StrokeTool.HIGHLIGHTER) }
-                    onDrawBehind { prepared.forEach { with(InkRenderer) { draw(it) } } }
-                },
-        )
+        // Finished ink, in its own layer. Each stroke's path is built once per box size and kept:
+        // a new stroke builds only its own path, not every stroke on the page again.
+        val hidden = erasing
+        val committed = remember(strokes, hidden) {
+            Modifier.drawWithCache {
+                val prepared = strokes.orEmpty()
+                    .filter { it.id !in hidden }
+                    .sortedBy { if (it.tool == StrokeTool.HIGHLIGHTER) 0 else 1 } // highlights under the ink
+                    .map { pathCache.get(it, size) }
+                pathCache.keep(strokes.orEmpty())
+                onDrawBehind { prepared.forEach { with(InkRenderer) { draw(it) } } }
+            }
+        }
+        Spacer(Modifier.fillMaxSize().graphicsLayer().then(committed))
         // The line being drawn, and the eraser ring.
         Canvas(Modifier.fillMaxSize()) {
             if (inProgress.isNotEmpty()) {
@@ -286,6 +299,37 @@ object InkPressure {
 
     /** Line width factor for a pressure: 1 at a medium press, thinner when light, thicker when firm. */
     fun widthFactor(pressure: Float): Float = (0.55f + 0.9f * pressure.coerceIn(0f, 1f)).coerceIn(0.5f, 1.45f)
+
+    private const val STEPS = 8
+
+    /** Pressure rounded to one of a few width steps (the eye can't tell finer ones apart). */
+    fun step(pressure: Float): Int = (pressure.coerceIn(0f, 1f) * (STEPS - 1) + 0.5f).toInt()
+
+    fun widthOfStep(step: Int): Float = widthFactor(step / (STEPS - 1f))
+}
+
+/**
+ * Prepared paths of finished strokes, by stroke, for one box size. Rebuilt only for strokes that
+ * are new or changed, or when the box is resized (zoom).
+ */
+class InkPathCache {
+    private class Entry(val stroke: Stroke, val size: Size, val prepared: InkRenderer.Prepared)
+
+    private val entries = HashMap<String, Entry>()
+
+    fun get(stroke: Stroke, size: Size): InkRenderer.Prepared {
+        entries[stroke.id]?.let { if (it.stroke === stroke && it.size == size) return it.prepared }
+        val prepared = InkRenderer.prepare(stroke.points, stroke.pressures, Color(stroke.color), stroke.width, size, stroke.tool == StrokeTool.HIGHLIGHTER)
+        entries[stroke.id] = Entry(stroke, size, prepared)
+        return prepared
+    }
+
+    /** Forgets strokes no longer on the page (erased, undone, or the page left). */
+    fun keep(strokes: List<Stroke>) {
+        if (entries.size <= strokes.size) return
+        val ids = strokes.mapTo(HashSet()) { it.id }
+        entries.keys.retainAll(ids)
+    }
 }
 
 /**
@@ -295,9 +339,13 @@ object InkPressure {
  * it crosses itself it doesn't get darker and the text under it stays readable.
  */
 object InkRenderer {
+    /** How many strokes have been turned into paths; read by performance tests. */
+    @Volatile var preparedCount = 0L
+
     class Prepared(val paths: List<Pair<Path, Float>>, val dot: Pair<Offset, Float>?, val color: Color, val cap: StrokeCap)
 
     fun prepare(points: FloatArray, pressures: FloatArray?, color: Color, widthFraction: Float, size: Size, highlight: Boolean): Prepared {
+        preparedCount++
         val w = size.width
         val h = size.height
         val strokeWidth = (widthFraction * w).coerceAtLeast(1f)
@@ -318,19 +366,32 @@ object InkRenderer {
             return Prepared(listOf(path to strokeWidth), null, color, cap)
         }
         // With pressure: the same smoothed curve, cut at each sample, each piece as wide as
-        // pressed there. Round caps overlap and hide the joins.
-        val pieces = ArrayList<Pair<Path, Float>>(n)
+        // pressed there. Widths are rounded to a few steps and neighbouring pieces of the same
+        // step share one path, so a pressure stroke is a handful of paths, not one per sample.
+        // Round caps overlap and hide the joins.
+        val pieces = ArrayList<Pair<Path, Float>>()
+        var current: Path? = null
+        var currentStep = -1
         var startX = px(0)
         var startY = py(0)
+        fun piece(step: Int): Path {
+            val path = current
+            if (path != null && step == currentStep) return path
+            return Path().also {
+                it.moveTo(startX, startY)
+                current = it
+                currentStep = step
+                pieces += it to strokeWidth * InkPressure.widthOfStep(step)
+            }
+        }
         for (i in 1 until n - 1) {
             val endX = (px(i) + px(i + 1)) / 2f
             val endY = (py(i) + py(i + 1)) / 2f
-            val piece = Path().apply { moveTo(startX, startY); quadraticTo(px(i), py(i), endX, endY) }
-            pieces += piece to strokeWidth * InkPressure.widthFactor(pressures[i])
+            piece(InkPressure.step(pressures[i])).quadraticTo(px(i), py(i), endX, endY)
             startX = endX
             startY = endY
         }
-        pieces += Path().apply { moveTo(startX, startY); lineTo(px(n - 1), py(n - 1)) } to strokeWidth * InkPressure.widthFactor(pressures[n - 1])
+        piece(InkPressure.step(pressures[n - 1])).lineTo(px(n - 1), py(n - 1))
         return Prepared(pieces, null, color, cap)
     }
 

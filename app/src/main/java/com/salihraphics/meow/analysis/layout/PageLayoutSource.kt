@@ -6,6 +6,7 @@ import com.salihraphics.meow.analysis.text.PageOcr
 import com.salihraphics.meow.analysis.text.PdfTextDocument
 import com.salihraphics.meow.analysis.text.PdfTextSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -41,11 +42,15 @@ class PdfPageLayoutSource(
         } else {
             text
         }
-        QuestionLayoutDetector.detect(page).also { cache[pageIndex] = it }
+        // Pure computation over every word of the page: never on the UI thread.
+        withContext(Dispatchers.Default) { QuestionLayoutDetector.detect(page) }.also { cache[pageIndex] = it }
     }
 
     override fun close() {
-        document?.close()
+        (ocr as? Closeable)?.close()
+        val open = document ?: return
         document = null
+        // Closing reads and releases a file: off the UI thread, and after any page still being read.
+        Thread({ runCatching { runBlocking { mutex.withLock { open.close() } } } }, "meow-pdf-text-close").start()
     }
 }

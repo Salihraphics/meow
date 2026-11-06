@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import com.salihraphics.meow.analysis.layout.ChoiceRecognition
@@ -224,7 +226,8 @@ class PdfViewerViewModel(
             null
         } ?: return
         val region = strokeRegion(stroke.points)
-        when (val recognition = ChoiceRecognizer.recognize(stroke.points, layout)) {
+        val recognition = withContext(Dispatchers.Default) { ChoiceRecognizer.recognize(stroke.points, layout) }
+        when (recognition) {
             ChoiceRecognition.NotAnAnswer -> Unit
             is ChoiceRecognition.Selected ->
                 answer(stroke.pageIndex, recognition.question, recognition.letter, SelectionOrigin.RECOGNIZED, stroke.id, region)
@@ -365,6 +368,6 @@ class PdfViewerViewModel(
         fun ViewportSnapshot.toFloatArray() = floatArrayOf(pageIndex.toFloat(), pageOffsetFraction, zoom, horizontalFraction)
 
         fun FloatArray.toViewport(): ViewportSnapshot? =
-            if (size == 4) ViewportSnapshot(this[0].toInt(), this[1], this[2], this[3]) else null
+            if (size == 4 && this[0].isFinite()) ViewportSnapshot(this[0].toInt(), this[1], this[2], this[3]).sanitized() else null
     }
 }

@@ -317,6 +317,59 @@ testing ("55 Günde TYT Matematik VDK 2024") was not available here, so its exac
 reproduced; the layouts above are what such books commonly use. See
 [DEVICE_TEST_CHECKLIST.md](DEVICE_TEST_CHECKLIST.md).
 
+## Stability sprint: ink accuracy, freezes, crashes
+
+Reported on a tablet: stylus ink appearing away from the pen, frequent freezes, occasional
+crashes. Each cause below was reproduced in a test before it was fixed.
+
+**One coordinate rule.** A stroke is stored as fractions (0..1) of the *unturned* page (or of
+its note). Input, live drawing, saved strokes, hit testing, the eraser, shape correction and
+reopening all use that box's size *at the moment the pen touches down*: pointer position in
+the page's own layout coordinates ÷ the page's size. Zoom, pan, the pinch preview and page
+rotation are all Compose layout/layer transforms around the page, which Compose already
+applies to pointer positions, so there is no extra offset or second transform anywhere.
+
+**Ink away from the pen (root cause).** The ink layer took the page size when it *started
+waiting* for the next stroke, not when the pen came down. After any zoom, page turn or note
+resize, the next stroke was converted with the old size: at 50% a stroke drawn 30% across the
+page was stored (and drawn live) at 14.5%; on a turned page 300px became 108px. Fixed by
+measuring at pen-down. Tests: strokes at 50/100/200/400% with panning, on a turned page, and
+the eraser after a zoom (`ViewerStabilityTest`).
+
+**Freezes after strokes (root cause).** Every stroke changes the tool state (undo becomes
+available), which rebuilt the cached ink of every visible page from scratch, plus every
+pressure stroke as one path per sample. Measured with 400 strokes on a page, 10 new strokes:
+4055 stroke paths built before, 10 after; time per stroke in the JVM test 212 ms → 128 ms (the
+rest is the test redrawing the whole view in software). Paths are now cached per stroke and
+box size; pressure strokes are grouped into a few width steps (`DrawingPerformanceTest`).
+
+**Crashes (root causes).**
+- `IllegalArgumentException: Cannot round NaN value.` when a PDF reports a page with no
+  width/height (zero or NaN aspect), and when a saved viewport contains NaN. Page shapes are
+  sanitised in one place (`safeAspect`), page height capped at 60,000 px, saved positions
+  sanitised on restore, non-finite stroke points refused, damaged note positions clamped
+  (`ViewerRobustnessTest`, `AnnotationSessionTest`).
+- A very tall page (receipt-like) asked for a single bitmap of ~1 GB (2048 × 122,880 px):
+  rendering now has a pixel budget (`MAX_RENDER_PIXELS`, about 24 MB per page).
+
+**Main-thread work removed.** Shape recognition runs on `Dispatchers.Default` on at most 400
+samples (stroke shown at once, saved as drawn or as the shape when done; saved as drawn if the
+screen closes first; never lost). Answer-mark detection (question layout, choice recognition)
+runs on `Default`; the PDF text document is closed off the UI thread after any reading
+finishes; the ML Kit recognizer is closed with the PDF (it leaked one per opened PDF).
+
+**Crash records.** Ayarlar → Hata kayıtları: crashes (stack trace, then handed on to the
+system as before) and, on Android 11+, the system's own records of ANRs (with thread dump),
+native crashes and memory kills from the previous run. Stored only on the device, newest 10,
+shared only when the student taps Paylaş. Debug builds also log UI-thread disk/network use
+(StrictMode).
+
+**Large documents.** A 2000-page PDF with jumps, flings and zooms rendered 107 times (106
+distinct pages); a revisited page comes from the cache (`LargeDocumentTest`). JVM numbers,
+not device measurements.
+
+**No data changes.** Database stays at version 9; no migration, nothing deleted.
+
 ## Viewer stability (scrolling, zoom, gestures)
 
 Reported on a real tablet: scrolling jumped to later pages, the document jittered after zoom,

@@ -7,7 +7,25 @@ real screen and real books can only be checked on a device. Use a book with an a
 Install: `adb install -r MEOW-…-arm64.apk` (or the universal APK). Existing library, drawings and
 keys must still be there after updating.
 
-## 0. Scrolling, zoom and stylus (this update; test first)
+## 00. Ink accuracy, freezes, crashes (this update; test first)
+Before starting: Ayarlar → Hata kayıtları → Temizle, so only this test's records remain.
+- [ ] Draw at the four corners and the middle of a page; the line is exactly under the tip.
+- [ ] Zoom to about 50%, 100%, 200%, 400% (pinch and the +/− buttons); after each, draw
+      immediately (the first stroke after the zoom matters most): exactly under the tip.
+- [ ] Pan sideways and down at 200%+, then draw: under the tip.
+- [ ] Turn the page 90° (and 180°, 270°), draw: under the tip; turn back: ink on the same
+      printed spot.
+- [ ] Resize a sticky note, write on it: under the tip.
+- [ ] Erase right after a zoom: the stroke under the eraser goes, no other.
+- [ ] Close and reopen the PDF, restart the app: all ink exactly where it was.
+- [ ] Write continuously for several minutes on one page until it is full: no growing delay
+      after each stroke, no freeze. Undo/redo, eraser still instant.
+- [ ] Fast scrolling through a 300+ page PDF, at 100% and 300%: no freeze; pages fill in.
+- [ ] Shape correction on: strokes appear instantly, and become shapes a moment later.
+- [ ] Afterwards: Ayarlar → Hata kayıtları. If anything is listed, tap Paylaş and send it
+      with the device model and what you were doing.
+
+## 0. Scrolling, zoom and stylus (previous update)
 Use a long PDF (300+ pages) and one with landscape and portrait pages mixed.
 - [ ] Slow and fast scrolling, flings, stopping a fling with a tap: the page never jumps to
       another page; no shaking while scrolling.

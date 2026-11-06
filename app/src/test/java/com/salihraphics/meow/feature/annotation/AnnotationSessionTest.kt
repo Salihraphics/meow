@@ -16,7 +16,7 @@ class AnnotationSessionTest {
     private val repo = FakeAnnotationRepository()
     private var ids = 0
     private fun session(doc: String = "doc") =
-        AnnotationSession(doc, repo, CoroutineScope(Dispatchers.Unconfined)) { "s${ids++}" }
+        AnnotationSession(doc, repo, CoroutineScope(Dispatchers.Unconfined), compute = Dispatchers.Unconfined) { "s${ids++}" }
 
     private fun AnnotationSession.idsOn(page: Int): List<String> {
         load(page)
@@ -291,10 +291,66 @@ class AnnotationSessionTest {
     @Test
     fun answerMarksSeeTheShapeThatStays() {
         val seen = mutableListOf<Stroke>()
-        val s = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined), onStrokeAdded = { seen += it }) { "s${ids++}" }
+        val s = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined), onStrokeAdded = { seen += it }, compute = Dispatchers.Unconfined) { "s${ids++}" }
         s.setShapeCorrection(true)
         s.addStroke(0, shakyLine(), aspect = 1.414f)
         assertEquals(1, seen.size)
         assertEquals(4, seen.single().points.size)
+    }
+
+    // ---- Shape check off the UI thread ------------------------------------------------------
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun pausedSession(): Pair<AnnotationSession, kotlinx.coroutines.test.TestCoroutineScheduler> {
+        val scheduler = kotlinx.coroutines.test.TestCoroutineScheduler()
+        val compute = kotlinx.coroutines.test.StandardTestDispatcher(scheduler)
+        val s = AnnotationSession("doc", repo, CoroutineScope(Dispatchers.Unconfined), compute = compute) { "s${ids++}" }
+        s.setShapeCorrection(true)
+        s.load(0)
+        return s to scheduler
+    }
+
+    @Test
+    fun aStrokeShowsAtOnceWhileItsShapeIsChecked() {
+        val (s, scheduler) = pausedSession()
+        s.addStroke(0, shakyLine(), aspect = 1.414f)
+        assertEquals("visible as drawn right away", 1, s.strokes(0).value!!.size)
+        assertTrue("not saved before the check ends", repo.all.isEmpty())
+        scheduler.advanceUntilIdle()
+        assertEquals(4, s.strokes(0).value!!.single().points.size)
+        assertEquals(1, repo.all.size)
+    }
+
+    @Test
+    fun closingTheScreenDuringTheCheckSavesTheStrokeAsDrawn() {
+        val scheduler = kotlinx.coroutines.test.TestCoroutineScheduler()
+        val scope = CoroutineScope(Dispatchers.Unconfined + kotlinx.coroutines.SupervisorJob())
+        val s = AnnotationSession("doc", repo, scope, compute = kotlinx.coroutines.test.StandardTestDispatcher(scheduler)) { "s${ids++}" }
+        s.setShapeCorrection(true)
+        val drawn = shakyLine()
+        s.addStroke(0, drawn, aspect = 1.414f)
+        scope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+        scheduler.advanceUntilIdle() // the check winds down on its own thread
+        assertTrue("saved as drawn, never lost", repo.all.values.single().points.contentEquals(drawn))
+    }
+
+    @Test
+    fun aStrokeErasedDuringItsCheckIsNotSavedAfterwards() {
+        val (s, scheduler) = pausedSession()
+        s.addStroke(0, shakyLine(), aspect = 1.414f)
+        s.erase(0, setOf(s.strokes(0).value!!.single().id))
+        scheduler.advanceUntilIdle()
+        assertTrue(s.strokes(0).value!!.isEmpty())
+        assertTrue(repo.all.isEmpty())
+    }
+
+    @Test
+    fun pointsThatAreNotRealPositionsAreRefused() {
+        val s = session()
+        s.addStroke(0, floatArrayOf(0.1f, Float.NaN, 0.2f, 0.2f))
+        s.addStroke(0, floatArrayOf(Float.POSITIVE_INFINITY, 0.1f, 0.2f, 0.2f))
+        assertTrue(repo.all.isEmpty())
+        s.addStroke(0, line(0.1f, 0.1f, 0.2f, 0.2f), pressures = floatArrayOf(Float.NaN, 0.5f))
+        assertEquals("a bad pressure list is dropped, the stroke kept", null, repo.all.values.single().pressures)
     }
 }

@@ -16,7 +16,7 @@ import kotlin.coroutines.resume
  * On-device OCR with ML Kit's bundled Latin model (covers Turkish letters). No network, no
  * account. Pages are rendered through the same renderer as the viewer.
  */
-class MlKitPageOcr(private val session: PdfRenderSession) : PageOcr {
+class MlKitPageOcr(private val session: PdfRenderSession) : PageOcr, java.io.Closeable {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     override suspend fun read(pageIndex: Int, region: OcrRegion): PageText? {
@@ -60,6 +60,9 @@ class MlKitPageOcr(private val session: PdfRenderSession) : PageOcr {
                 }
                 .addOnFailureListener { continuation.resume(emptyList()) }
         }
+
+    /** Releases the recognizer's native model; one is made per open PDF. */
+    override fun close() = recognizer.close()
 
     private companion object {
         const val FULL_WIDTH_PX = 1400

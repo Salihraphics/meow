@@ -35,7 +35,7 @@ class PdfLayout(
     /** How far the list can be panned sideways. */
     val maxScrollX: Int = listWidth - viewportWidth
 
-    private val heights = IntArray(pageCount) { (pageWidth / shownAspect(it)).roundToInt().coerceAtLeast(1) }
+    private val heights = IntArray(pageCount) { (pageWidth / safeAspect(shownAspect(it))).coerceIn(1f, MAX_PAGE_HEIGHT.toFloat()).roundToInt() }
     private val tops = IntArray(pageCount + 1).also { t ->
         t[0] = margin
         for (i in 0 until pageCount) t[i + 1] = t[i] + heights[i] + margin
@@ -81,6 +81,21 @@ class PdfLayout(
         return lo
     }
 }
+
+/**
+ * A page's width / height that can be laid out: a damaged PDF can report a zero or missing size,
+ * which would otherwise make a page infinitely tall (and crash the layout).
+ */
+fun safeAspect(aspect: Float): Float = if (aspect.isFinite() && aspect > 0f) aspect else DEFAULT_ASPECT
+
+/** Portrait A4, for pages whose size is unreadable. */
+const val DEFAULT_ASPECT = 0.707f
+
+/**
+ * No page is laid out taller than this many pixels (a 60:1 receipt at 400% would otherwise
+ * exceed what Compose can measure). Such a page is shown squeezed, not crashed on.
+ */
+const val MAX_PAGE_HEIGHT = 60_000
 
 /** A spot in the document: page and fractions of it (outside 0..1 in the margins and gaps). */
 data class DocumentPoint(val page: Int, val x: Float, val y: Float)

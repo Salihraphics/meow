@@ -22,7 +22,8 @@ data class StickyNoteEntity(
     val updatedAt: Long,
     val deletedAt: Long?,
 ) {
-    fun toDomain() = StickyNote(id, documentId, pageIndex, x, y, width, height, text, color)
+    /** Clamped on the way in too, so a damaged row can't put a note off its page (or crash it). */
+    fun toDomain() = StickyNote(id, documentId, pageIndex, x, y, width, height, text, color).clamped()
 
     companion object {
         fun from(note: StickyNote, createdAt: Long, now: Long) = StickyNoteEntity(

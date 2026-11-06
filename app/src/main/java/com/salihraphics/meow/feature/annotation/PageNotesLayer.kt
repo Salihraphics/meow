@@ -71,7 +71,8 @@ fun PageNotesLayer(pageIndex: Int, session: AnnotationSession, rotation: Int, to
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         if (w <= 0f || h <= 0f) return@BoxWithConstraints
-        val ink = strokes?.filter { it.noteId != null }?.groupBy { it.noteId }
+        // Same lists until the strokes change, so each note's ink layer keeps its paths.
+        val ink = remember(strokes) { strokes?.filter { it.noteId != null }?.groupBy { it.noteId } }
         list.forEach { note ->
             key(note.id) { NoteView(note, ink?.get(note.id).orEmpty().takeIf { strokes != null }, w, h, selected == note.id, rotation, tools, session) }
         }
